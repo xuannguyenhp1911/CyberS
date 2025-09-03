@@ -1,0 +1,82 @@
+.overview {
+    .text {
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-right: 3px;
+    }
+
+    &Header {
+        display: flex;
+        align-items: center;
+    }
+
+    &Info {
+        display: flex;
+        justify-content: space-between;
+
+        &List {
+            flex-basis: 48%;
+
+            &Item {
+                display: flex;
+                margin-top: 24px;
+                word-break: break-word;
+                align-items: center;
+
+                .label {
+                    color: var(--textColor);
+                    min-width: 150px;
+                    opacity: 0.7;
+                    font-weight: 600;
+                }
+
+                .icon {
+                    margin-left: 3px;
+                    font-size: 1rem;
+                    opacity: 0.6;
+                    cursor: pointer;
+                }
+
+                .spotSavingEditIcon {
+                    font-size: 1.3rem;
+                    margin-left: 12px;
+                    color: var(--blueLightColor);
+                    cursor: pointer;
+                }
+            }
+        }
+    }
+
+    &BtnAction {
+        margin-top: 24px;
+        display: flex;
+        align-items: center;
+
+        .btn:nth-child(n + 2) {
+            margin-left: 6px;
+        }
+    }
+
+    &Notif {
+        margin-top: 24px;
+    }
+}
+
+@media (max-width: 740px) {
+    .overview {
+        &Info {
+            flex-direction: column;
+
+            &List {
+                flex-basis: 100%;
+            }
+        }
+
+        &BtnAction {
+            // .btn:nth-child(n + 2) {
+            //     margin-top: 6px;
+            //     margin-left: 0;
+            // }
+        }
+    }
+}

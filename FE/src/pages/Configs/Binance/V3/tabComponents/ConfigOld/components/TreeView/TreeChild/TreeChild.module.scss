@@ -1,0 +1,27 @@
+.treeChild {
+    .tableBodyCell {
+color: var(--textColor);
+        min-width: 50px;
+        text-align: center;
+        padding: 6px 10px !important;
+        font-size: 1.1rem;
+        white-space: normal;
+
+        .icon {
+            color: #1976d2;
+            cursor: pointer;
+        }
+        .iconBeta
+        {
+            color: #bf820f;
+            cursor: pointer;
+        }
+
+    }
+    .checkboxStyle {
+        width: 16px;
+        height: 16px;
+         color:var(--textColor);
+        cursor: pointer;
+    }
+}

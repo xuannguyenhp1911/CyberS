@@ -1,0 +1,78 @@
+.overview {
+    .text {
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-right: 3px;
+    }
+
+    &Header {
+        display: flex;
+        align-items: center;
+    }
+
+    &Info {
+        display: flex;
+        justify-content: space-between;
+
+        &List {
+            flex-basis: 48%;
+
+            &Item {
+                display: flex;
+                margin-top: 24px;
+                word-break: break-word;
+
+                .label {
+                    color: var(--textColor);
+                    min-width: 150px;
+                    opacity: .7;
+                    font-weight: 600;
+                }
+
+                .icon {
+                    margin-left: 3px;
+                    font-size: 1rem;
+                    opacity: 0.6;
+                    cursor: pointer;
+                    vertical-align: middle;
+                }
+            }
+        }
+    }
+
+    &BtnAction {
+        margin-top: 24px;
+
+        .btn:nth-child(n+2) {
+            margin-left: 6px;
+        }
+    }
+
+    &Notif {
+        margin-top: 24px;
+    }
+}
+
+@media (max-width:740px) {
+    .overview {
+
+        &Info {
+            flex-direction: column;
+
+            &List {
+                flex-basis: 100%;
+            }
+        }
+
+        &BtnAction {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+
+            .btn:nth-child(n+2) {
+                margin-top: 6px;
+                margin-left: 0;
+            }
+        }
+    }
+}

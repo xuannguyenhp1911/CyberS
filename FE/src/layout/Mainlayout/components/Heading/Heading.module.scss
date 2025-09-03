@@ -1,0 +1,162 @@
+.heading {
+    display: flex;
+    align-items: center;
+    padding: 12px 0 12px 20px;
+
+
+    &Logo {
+        display: flex;
+        align-items: center;
+        width: 300px;
+        text-decoration: none;
+        cursor: pointer;
+
+        img {
+            max-height: 35px;
+            margin-right: 10px;
+        }
+
+        .text {
+            font-size: 26px;
+            font-weight: 600;
+            color: var(--textColor);
+            font-family: "Nunito", sans-serif;
+        }
+
+        .teleIcon {
+            width: 28px;
+            margin: 0 6px 12px 6px;
+        }
+    }
+
+    .navbar {
+        cursor: pointer;
+    }
+
+    .totalMoneyFutureBot {
+        margin-left: 16px;
+        font-size: 1.5rem;
+        font-weight: 500;
+        color: var(--textColor);
+    }
+
+    .totalMoneyFutureBotHorizontal {
+        display: flex;
+    }
+
+    &Infor {
+        display: flex;
+        align-items: center;
+        margin-left: auto;
+        margin-right: 6px;
+
+
+        .avatar {
+            display: flex;
+            align-items: center;
+            margin-left: auto;
+            cursor: pointer;
+
+            .name {
+                font-weight: 600;
+                margin-left: 10px;
+                display: flex;
+                align-items: center;
+                text-transform: capitalize;
+
+                span {
+                    font-size: 1.1rem;
+                }
+
+            }
+        }
+    }
+
+}
+
+.avatarDetail {
+    min-width: 250px;
+
+    .name {
+        text-align: center;
+        padding: 16px 12px;
+
+        .main {
+            font-size: 18px;
+            margin-bottom: 3px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .subMain {
+            font-size: 14px;
+            opacity: .8;
+        }
+    }
+
+    .list {
+        &Item {
+            display: flex;
+            font-size: 14px;
+            padding: 10px 15px;
+            align-items: center;
+            border-top: 1px solid #0000002b;
+            transition: .3s;
+            cursor: pointer;
+
+            &:hover {
+                background-color: var(--hoverColor);
+            }
+
+            
+            &Name {
+                margin-left: 6px;
+            }
+        }
+        a {
+            color: var(--textColor) !important;
+        }
+    }
+}
+
+@media (max-width:740px) {
+    .heading {
+        &Logo {
+            margin-left: -8px;
+            width: fit-content;
+
+            .text {
+                display: none;
+            }
+
+            .teleIcon {
+                margin-left: -6px;
+            }
+        }
+
+        &Infor {
+            .avatar {
+                .name {
+                    span {
+                        font-size: 1rem;
+                    }
+
+                }
+            }
+        }
+
+        .totalMoneyFutureBot {
+            font-size: 1.3rem;
+            margin-left: 12px;
+        }
+
+        .totalMoneyFutureBotSmall {
+            font-size: .9rem;
+        }
+
+        .totalMoneyFutureBotHorizontal {
+            flex-wrap: wrap;
+            flex-direction: column;
+        }
+    }
+}

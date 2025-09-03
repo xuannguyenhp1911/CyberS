@@ -1,0 +1,32 @@
+.LayoutBox {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+
+    &Item {
+        flex-basis: 8%;
+        background-color: var(--borderColor);
+        margin: 1%;
+        color: #000000;
+        padding: 32px;
+        font-weight: 500;
+        text-align: center;
+        border-radius: 6px;
+        font-size: 1.2rem;
+        cursor: pointer;
+
+        &:hover {
+             color:var(--textColor);;
+        }
+    }
+}
+
+@media (max-width: 768px) {
+    .LayoutBox {
+        &Item {
+            flex-basis: 21%;
+            margin: 2%;
+            padding: 24px;
+        }
+    }
+}

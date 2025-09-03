@@ -1,0 +1,66 @@
+.bot {
+    
+
+    &TableContainer {
+       
+
+        &Title {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            .filterList {
+                display: flex;
+                flex-wrap: wrap;
+                margin: -12px;
+                max-width: 60%;
+                &Item {
+                    margin: 12px;
+                    .label {
+                        opacity: .6;
+                        margin-bottom: 10px;
+                        font-size: 1.1rem;
+                    }
+        
+                    .select {
+                        min-width: 200px;
+                        max-width: 200px;
+                        height: fit-content;
+                    }
+        
+                    &:nth-child(n+2) {
+                    }
+                }
+            }
+        }
+
+        &Data {
+            margin-top: 16px;
+        }
+    }
+    
+    .icon {
+        color: #1976d2;
+        vertical-align: sub;
+        cursor: pointer;
+    }
+    .iconDisabled
+    {
+        color: var(--borderColor);
+        cursor:not-allowed;
+    }
+}
+
+@media (max-width:740px) {
+    .bot {
+        &FilterList {
+
+            &Item {
+                flex: 1;
+
+                .select {
+                    min-width: 100%;
+                }
+            }
+        }
+    }
+}

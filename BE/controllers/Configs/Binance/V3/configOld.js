@@ -1,0 +1,1807 @@
+const { MainClient } = require('binance');
+const StrategiesModel = require('../../../../models/Configs/Binance/V3/configOld.model')
+const BotModel = require('../../../../models/bot.model')
+const ServerModel = require('../../../../models/servers.model')
+const PositionV3Model = require('../../../../models/Positions/Binance/V3/position.model')
+const { v4: uuidv4 } = require('uuid');
+const { default: mongoose } = require('mongoose');
+
+const dataCoinByBitController = {
+    // SOCKET
+    sendDataRealtime: ({
+        type,
+        data,
+        serverIP
+    }) => {
+        const { socketServer } = require('../../../../serverConfig');
+        socketServer.to(serverIP).emit(type, data)
+    },
+    handleSendDataRealtime: ({
+        type,
+        data = []
+    }) => {
+        const groupedByBotID = data.reduce((acc, item) => {
+            const serverIP = item.botID.serverIP
+
+            if (!acc[serverIP]) {
+                acc[serverIP] = [];
+            }
+
+            acc[serverIP].push(item);
+
+            return acc;
+        }, {});
+
+        const list = Object.keys(groupedByBotID)
+        list?.length > 0 && Promise.allSettled(list.map(async serverIPID => {
+
+            const resData = await ServerModel.findOne({ _id: serverIPID })
+
+            if (!resData) return
+            const serverIP = resData.IP
+
+            const dataToSend = groupedByBotID[serverIPID];
+
+            dataToSend?.length > 0 && dataCoinByBitController.sendDataRealtime({
+                type,
+                serverIP,
+                data: dataToSend
+            });
+        }))
+    },
+
+    getRestClientV5Config: ({
+        ApiKey,
+        SecretKey,
+        Demo
+    }) => {
+        const client = new MainClient({
+            api_key: ApiKey,
+            api_secret: SecretKey,
+            beautifyResponses: true,
+            recvWindow: 10000,
+            useTestnet: !Demo ? false : true,
+        })
+        client.setTimeOffset(-3000)
+        return client
+
+    },
+    checkConditionStrategies: (strategiesData) => {
+        return strategiesData.botID?.Status === "Running" && strategiesData.botID.ApiKey
+    },
+    getAllStrategiesNewUpdate: async (TimeTemp) => {
+
+        const resultFilter = await StrategiesModel.aggregate([
+            {
+                $match: {
+                    children: {
+                        $elemMatch: {
+                            TimeTemp: TimeTemp
+                        }
+                    }
+                }
+            },
+            {
+                $project: {
+                    label: 1,
+                    value: 1,
+                    volume24h: 1,
+                    children: {
+                        $filter: {
+                            input: "$children",
+                            as: "child",
+                            cond: {
+                                $and: [
+                                    { $eq: ["$$child.TimeTemp", TimeTemp] }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+        const result = await StrategiesModel.populate(resultFilter, {
+            path: 'children.botID',
+        })
+
+
+        const newDataSocketWithBotData = result.flatMap((data) => data.children.map(child => {
+            child.symbol = data.value
+            child.value = `${data._id}-${child._id}`
+            return child
+        })) || []
+
+        return newDataSocketWithBotData
+    },
+
+    // GET
+    closeAllBotForUpCode: async (req, res) => {
+        dataCoinByBitController.sendDataRealtime({
+            type: "close-upcode",
+            serverIP: "ByBit_V3"
+        })
+        res.customResponse(200, "Send Successful", "");
+    },
+    getSymbolFromCloud: async () => {
+        try {
+
+            let CoinInfo = new MainClient({
+                testnet: false,
+                recvWindow: 100000,
+            });
+
+            let data = []
+            await CoinInfo.getTickers({ category: 'linear' })
+                .then((rescoin) => {
+                    rescoin.result.list.forEach((e) => {
+                        if (e.symbol.split("USDT")[1] === "") {
+                            data.push({
+                                symbol: e.symbol,
+                                volume24h: e.turnover24h,
+                            })
+                        }
+                    })
+                })
+                .catch((error) => {
+                    console.error(error);
+                });
+
+            return data
+
+        } catch (err) {
+            return []
+        }
+    },
+
+    getAllStrategies: async (req, res) => {
+        try {
+            const userID = req.user._id;
+            const { botListInput } = req.body;
+
+            const botList = botListInput.map(item => new mongoose.Types.ObjectId(item));
+
+            const resultFilter = await StrategiesModel.aggregate([
+                {
+                    $match: {
+                        "children.botID": { $in: botList }
+                    }
+                },
+                {
+                    $addFields: {
+                        children: {
+                            $filter: {
+                                input: "$children",
+                                as: "child",
+                                cond: { $in: ["$$child.botID", botList] }
+                            }
+                        }
+                    }
+                },
+                {
+                    $addFields: {
+                        hasUserID: {
+                            $cond: {
+                                if: { $in: [userID, { $ifNull: ["$bookmarkList", []] }] },
+                                then: 1,
+                                else: 0
+                            }
+                        }
+                    }
+                },
+                {
+                    $sort: {
+                        hasUserID: -1,
+                        label: 1
+                    }
+                },
+                {
+                    $project: {
+                        label: 1,
+                        value: 1,
+                        volume24h: 1,
+                        bookmarkList: 1,
+                        children: 1 // Để nguyên children
+                    }
+                }
+            ]);
+
+            // Sắp xếp children trong JavaScript thay vì dùng $function
+            resultFilter.forEach(item => {
+                item.children.sort((a, b) => a.OrderChange - b.OrderChange);
+            });
+
+
+            const handleResult = await StrategiesModel.populate(resultFilter, {
+                path: 'children',
+                populate: [
+                    { path: 'botID' },
+                    { path: 'scannerID' }
+                ]
+            })
+
+            res.customResponse(res.statusCode, "Get All Strategies Successful", handleResult);
+        } catch (err) {
+            res.status(500).json({ message: err.message });
+        }
+    },
+    getAllSymbol: async (req, res) => {
+        try {
+            const result = await StrategiesModel.find().sort({ "label": 1 });
+
+            res.customResponse(res.statusCode, "Get All Symbol Successful", result.map(item => item.value))
+        } catch (err) {
+            res.status(500).json({ message: err.message });
+        }
+    },
+
+    getTotalFutureByBot: async (req, res) => {
+        try {
+
+            const userID = req.user._id
+
+            const { botType } = req.body
+
+            const botListId = await BotModel.find({
+                userID,
+                botType,
+                ApiKey: { $exists: true, $ne: null },
+                SecretKey: { $exists: true, $ne: null }
+            })
+                .select({ telegramToken: 0 }) // Loại bỏ trường telegramToken trong kết quả trả về
+                .sort({ Created: -1 });
+
+            const resultAll = await Promise.allSettled(botListId.map(async botData => dataCoinByBitController.getFutureBE(botData._id)))
+
+
+            if (resultAll.some(item => item?.value?.totalWalletBalance)) {
+                res.customResponse(200, "Get Total Future Successful", resultAll.reduce((pre, cur) => {
+                    return pre + (+cur?.value?.totalWalletBalance || 0)
+                }, 0))
+            }
+            else {
+                res.customResponse(400, "Get Total Future Failed", "");
+            }
+
+        }
+
+        catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    },
+    getTotalFutureSpot: async (req, res) => {
+        try {
+
+            const userID = req.params.id;
+
+            const botListId = await BotModel.find({
+                userID,
+                ApiKey: { $exists: true, $ne: null },
+                SecretKey: { $exists: true, $ne: null }
+            })
+                .select({ telegramToken: 0 }) // Loại bỏ trường telegramToken trong kết quả trả về
+                .sort({ Created: -1 });
+
+            const resultAll = await Promise.allSettled(botListId.map(async botData => dataCoinByBitController.getFutureSpotBE(botData._id)))
+
+            if (resultAll.some(item => item?.value?.future && item?.value?.spotTotal)) {
+                res.customResponse(200, "Get Total Money Successful", resultAll.reduce((pre, cur) => {
+                    return pre + (+cur?.value?.future || 0) + (+cur?.value?.spotTotal || 0)
+                }, 0))
+            }
+            else {
+                res.customResponse(400, "Get Total Money Failed", "");
+            }
+
+        }
+
+        catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    },
+    getTotalFutureSpotByBot: async (req, res) => {
+        try {
+
+            const { botListId } = req.body
+
+            const resultAll = await Promise.allSettled(botListId.map(async botID => dataCoinByBitController.getFutureSpotBE(botID)))
+
+            if (resultAll.some(item => item?.value?.future && item?.value?.spotTotal)) {
+                res.customResponse(200, "Get Total Money Successful", resultAll.reduce((pre, cur) => {
+                    return pre + (+cur?.value?.future || 0) + (+cur?.value?.spotTotal || 0)
+                }, 0))
+            }
+            else {
+                res.customResponse(400, "Get Total Money Failed", "");
+            }
+
+        }
+
+        catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    },
+    // CREATE
+    createStrategies: async (req, res) => {
+
+        try {
+            const userID = req.user._id
+
+            const { data, botListId, Symbol } = req.body
+
+            let result
+
+            const TimeTemp = new Date().toString()
+
+            const newData = {
+                ...data,
+                EntryTrailing: data.EntryTrailing || 40
+            }
+
+            if (newData.PositionSide === "Both") {
+                result = await StrategiesModel.updateMany(
+                    { "value": { "$in": Symbol } },
+                    {
+                        "$push": {
+                            "children": [
+                                ...botListId.map(botID => ({ ...newData, PositionSide: "Long", botID, userID, TimeTemp })),
+                                ...botListId.map(botID => ({ ...newData, PositionSide: "Short", botID, userID, TimeTemp }))
+                            ]
+                        }
+                    },
+                    { new: true }
+                )
+            }
+            else {
+                result = await StrategiesModel.updateMany(
+                    { "value": { "$in": Symbol } },
+                    { "$push": { "children": botListId.map(botID => ({ ...newData, botID, userID, TimeTemp })) } },
+                    { new: true }
+                );
+            }
+
+            const resultFilter = await StrategiesModel.aggregate([
+                {
+                    $match: {
+                        children: {
+                            $elemMatch: {
+                                IsActive: true,
+                                userID: new mongoose.Types.ObjectId(userID),
+                                TimeTemp: TimeTemp
+                            }
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        label: 1,
+                        value: 1,
+                        volume24h: 1,
+                        children: {
+                            $filter: {
+                                input: "$children",
+                                as: "child",
+                                cond: {
+                                    $and: [
+                                        { $eq: ["$$child.IsActive", true] },
+                                        { $eq: ["$$child.userID", new mongoose.Types.ObjectId(userID)] },
+                                        { $eq: ["$$child.TimeTemp", TimeTemp] }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]);
+
+
+            const resultGet = await StrategiesModel.populate(resultFilter, {
+                path: 'children.botID',
+            })
+
+            const handleResult = resultGet.flatMap((data) => data.children.map(child => {
+                child.symbol = data.value
+                child.value = `${data._id}-${child._id}`
+                return child
+            })) || []
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+
+                handleResult.length > 0 && dataCoinByBitController.handleSendDataRealtime({
+                    type: "add-old",
+                    data: handleResult
+                })
+
+                res.customResponse(200, "Add New Strategies Successful", []);
+            }
+            else {
+                res.customResponse(400, "Add New Strategies Failed", "");
+            }
+
+        }
+
+        catch (error) {
+            console.log(error);
+
+            res.status(500).json({ message: error.message });
+        }
+
+    },
+
+    // UPDATE
+    updateStrategiesByID: async (req, res) => {
+        try {
+
+            const strategiesID = req.params.id;
+
+            const { parentID, newData, symbol } = req.body
+
+            const result = await StrategiesModel.updateOne(
+                { "children._id": strategiesID, _id: parentID },
+                { $set: { "children.$": newData } }
+            )
+
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+                if (dataCoinByBitController.checkConditionStrategies(newData)) {
+                    dataCoinByBitController.handleSendDataRealtime({
+                        type: "update-old",
+                        data: [{
+                            ...newData,
+                            value: `${parentID}-${strategiesID}`,
+                            symbol
+                        }]
+                    })
+                }
+                res.customResponse(200, "Update Strategies Successful", "");
+            }
+            else {
+                res.customResponse(400, "Update Strategies Failed", "");
+            }
+
+        } catch (error) {
+            // Xử lý lỗi nếu có
+            res.status(500).json({ message: "Update Strategies Error" });
+        }
+    },
+
+    updateStrategiesMultiple: async (req, res) => {
+        try {
+
+            const dataList = req.body
+
+            const TimeTemp = new Date().toString()
+
+            const bulkOperations = dataList.map(data => ({
+                updateOne: {
+                    filter: { "children._id": data.id, _id: data.parentID },
+                    update: {
+                        $set: {
+                            "children.$": {
+                                ...data.UpdatedFields,
+                                TimeTemp
+                            }
+                        }
+                    }
+                }
+            }));
+
+            const bulkResult = await StrategiesModel.bulkWrite(bulkOperations);
+
+
+            const newDataSocketWithBotData = await dataCoinByBitController.getAllStrategiesNewUpdate(TimeTemp)
+
+            newDataSocketWithBotData.length > 0 && dataCoinByBitController.handleSendDataRealtime({
+                type: "update-old",
+                data: newDataSocketWithBotData
+            })
+
+            res.customResponse(200, "Update Mul-Strategies Successful", "");
+
+
+        } catch (error) {
+            // Xử lý lỗi nếu có
+            res.status(500).json({ message: "Update Mul-Strategies Error" });
+        }
+    },
+
+    addToBookmark: async (req, res) => {
+        try {
+
+            const symbolID = req.params.id;
+            const userID = req.user._id;
+
+
+            const result = await StrategiesModel.updateOne(
+                { "_id": symbolID },
+                { $addToSet: { bookmarkList: userID } }
+            )
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+                res.customResponse(200, "Add Bookmark Successful", "");
+            }
+            else {
+                res.customResponse(400, "Add Bookmark Failed", "");
+            }
+
+        } catch (error) {
+            // Xử lý lỗi nếu có
+            res.status(500).json({ message: "Add Bookmark Error" });
+        }
+    },
+    removeToBookmark: async (req, res) => {
+        try {
+
+            const symbolID = req.params.id;
+            const userID = req.user._id;
+
+
+            const result = await StrategiesModel.updateOne(
+                { "_id": symbolID },
+                { $pull: { bookmarkList: userID } }
+            )
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+                res.customResponse(200, "Remove Bookmark Successful", "");
+            }
+            else {
+                res.customResponse(400, "Remove Bookmark Failed", "");
+            }
+
+        } catch (error) {
+            // Xử lý lỗi nếu có
+            res.status(500).json({ message: "Remove Bookmark Error" });
+        }
+    },
+
+    // DELETE
+    deleteStrategies: async (req, res) => {
+        try {
+
+            const strategiesID = req.params.id;
+
+            const strategiesIDList = req.body
+
+            // const resultGet = await StrategiesModel.find(
+            //     { _id: strategiesID },
+            //     { "children._id": { $in: strategiesIDList } }
+            // ).populate("children.botID")
+
+            // console.log(resultGet);
+
+            // const newDataSocketWithBotData = resultGet.children.map(child => {
+            //     child.symbol = resultGet.value
+            //     child.value = `${resultGet._id}-${child._id}`
+            //     return child
+            // }) || []
+
+
+            const result = await StrategiesModel.updateOne(
+                { _id: strategiesID },
+                { $pull: { children: { _id: { $in: strategiesIDList } } } }
+            );
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+                // console.log(newDataSocketWithBotData.length);
+
+                // newDataSocketWithBotData.length > 0 && dataCoinByBitController.sendDataRealtime({
+                //     type: "delete-old",
+                //     data: newDataSocketWithBotData
+                // })
+                res.customResponse(200, "Delete Strategies Successful");
+
+            }
+            else {
+                res.customResponse(400, "Delete Strategies Failed");
+            }
+
+        } catch (error) {
+            res.status(500).json({ message: "Delete Strategies Error" });
+        }
+    },
+
+    deleteStrategiesItem: async (req, res) => {
+        try {
+
+            const { id, parentID } = req.body;
+
+            const resultFilter = await StrategiesModel.aggregate([
+                {
+                    $match: {
+                        "_id": new mongoose.Types.ObjectId(parentID),
+                    }
+                },
+                {
+                    $project: {
+                        label: 1,
+                        value: 1,
+                        volume24h: 1,
+                        children: {
+                            $filter: {
+                                input: "$children",
+                                as: "child",
+                                cond: { $eq: ["$$child._id", new mongoose.Types.ObjectId(id)] }
+                            }
+                        }
+                    }
+                }
+            ]);
+
+            const resultGet = await StrategiesModel.populate(resultFilter, {
+                path: 'children.botID',
+            })
+            const newDataSocketWithBotData = resultGet[0].children.map(child => {
+                child.symbol = resultGet.value
+                child.value = `${parentID}-${id}`
+                return child
+            }) || []
+
+
+
+            const result = await StrategiesModel.updateOne(
+                { _id: parentID },
+                { $pull: { children: { _id: id } } }
+            );
+
+
+
+            if (result.acknowledged && result.deletedCount !== 0) {
+
+
+                newDataSocketWithBotData.length > 0 && dataCoinByBitController.handleSendDataRealtime({
+                    type: "delete-old",
+                    data: newDataSocketWithBotData
+                })
+
+                res.customResponse(200, "Delete Strategies Successful");
+            }
+            else {
+                res.customResponse(400, "Delete Strategies failed");
+            }
+
+        } catch (error) {
+            res.status(500).json({ message: "Delete Strategies Error" });
+        }
+    },
+
+    deleteStrategiesMultiple: async (req, res) => {
+        try {
+
+            const strategiesIDList = req.body
+
+            const parentIDs = strategiesIDList.map(item => new mongoose.Types.ObjectId(item.parentID));
+            const ids = strategiesIDList.map(item => new mongoose.Types.ObjectId(item.id));
+
+            const resultFilter = await StrategiesModel.aggregate([
+                {
+                    $match: {
+                        "_id": { $in: parentIDs }
+                    }
+                },
+                {
+                    $project: {
+                        label: 1,
+                        value: 1,
+                        volume24h: 1,
+                        children: {
+                            $filter: {
+                                input: "$children",
+                                as: "child",
+                                cond: {
+                                    $in: ["$$child._id", ids]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]);
+
+            const resultGet = await StrategiesModel.populate(resultFilter, {
+                path: 'children.botID',
+            })
+
+            const handleResult = resultGet.flatMap((data) => data.children.map(child => {
+                child.symbol = data.value
+                child.value = `${data._id}-${child._id}`
+                return child
+            })) || []
+
+
+
+            const bulkOperations = strategiesIDList.map(data => ({
+                updateOne: {
+                    filter: { _id: data.parentID },
+                    update: { $pull: { children: { _id: data.id } } }
+                }
+            }));
+
+            const bulkResult = await StrategiesModel.bulkWrite(bulkOperations);
+
+            // if (result.acknowledged && result.deletedCount !== 0) {
+
+            handleResult.length > 0 && dataCoinByBitController.handleSendDataRealtime({
+                type: "delete-old",
+                data: handleResult
+            })
+            res.customResponse(200, "Delete Strategies Successful");
+
+
+
+        } catch (error) {
+            res.status(500).json({ message: "Delete Strategies Error" });
+        }
+    },
+    setAutoOffVol: async (req, res) => {
+        try {
+
+            const { volAutoOff, checkOnRemain, botListID } = req.body
+            const volConvert = volAutoOff * 10 ** 6
+
+            const TimeTemp = new Date().toString()
+
+            await BotModel.updateMany(
+                {
+                    _id: { $in: botListID }
+                },
+                {
+                    volAutoOff
+                }
+            )
+
+            if (checkOnRemain) {
+                await StrategiesModel.updateMany(
+                    {
+                        "children.botID": { $in: botListID },
+                    },
+                    {
+                        $set: {
+                            "children.$[elem].IsActive": true,
+                            "children.$[elem].TimeTemp": TimeTemp,
+                        }
+                    },
+                    {
+                        arrayFilters: [{ "elem.botID": { $in: botListID } }]
+                    }
+                );
+            }
+            await StrategiesModel.updateMany(
+                {
+                    "children.botID": { $in: botListID },
+                    volume24h: { $lt: volConvert }  // So sánh đúng cú pháp
+                },
+                {
+                    $set: {
+                        "children.$[elem].IsActive": false,
+                        "children.$[elem].TimeTemp": TimeTemp,
+                    }
+                },
+                {
+                    arrayFilters: [
+                        { "elem.botID": { $in: botListID } }
+                    ]
+                }
+            );
+            const newDataSocketWithBotData = await dataCoinByBitController.getAllStrategiesNewUpdate(TimeTemp)
+
+            newDataSocketWithBotData.length > 0 && dataCoinByBitController.handleSendDataRealtime({
+                type: "update-old",
+                data: newDataSocketWithBotData
+            })
+
+            res.customResponse(200, "Set Auto Successful", newDataSocketWithBotData)
+        }
+
+        catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    },
+
+    setMaxSymbol: async (req, res) => {
+        try {
+
+            const { maxSymbol, botListData } = req.body
+
+            await BotModel.updateMany(
+                {
+                    _id: { $in: botListData.map(item => item.value) }
+                },
+                {
+                    maxSymbol
+                }
+            )
+            const botData = botListData[0]
+            botListData.forEach(botData => {
+                
+                dataCoinByBitController.sendDataRealtime({
+                    type: "bot-max-symbol",
+                    data: {
+                        newData: botData,
+                        maxSymbol
+                    },
+                    serverIP: botData.serverIP
+                })
+            })
+
+            res.customResponse(200, "Set Max-Symbol Successful", maxSymbol)
+        }
+
+        catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // OTHER
+
+    copyMultipleStrategiesToSymbol: async (req, res) => {
+
+        try {
+            const { symbolListData, symbolList } = req.body
+
+            const TimeTemp = new Date().toString()
+
+            // const bulkOperations = [];
+
+            // // Lặp qua danh sách symbolList và tạo các thao tác push vào mảng bulkOperations
+            // symbolList.forEach(symbol => {
+            //     const filter = { "value": symbol };
+            //     const update = {
+            //         $push: {
+            //             "children": {
+            //                 $each: symbolListData.map(data => {
+            //                     const newObj = { ...data, TimeTemp };
+            //                     delete newObj?._id
+            //                     delete newObj?.value
+            //                     return newObj
+
+            //                 })
+            //             }
+            //         }
+            //     };
+
+            //     bulkOperations.push({
+            //         updateOne: {
+            //             filter,
+            //             update
+            //         }
+            //     });
+            // });
+
+            const bulkOperations = symbolList.map(symbol => ({
+                updateOne: {
+                    filter: { "value": symbol },
+                    update: {
+                        $push: {
+                            "children": {
+                                $each: symbolListData.map(({ _id, value, ...rest }) => ({ ...rest, TimeTemp }))
+                            }
+                        }
+                    }
+                }
+            }));
+
+            const bulkResult = await StrategiesModel.bulkWrite(bulkOperations);
+
+            const newDataSocketWithBotData = await dataCoinByBitController.getAllStrategiesNewUpdate(TimeTemp)
+
+            newDataSocketWithBotData.length > 0 && dataCoinByBitController.handleSendDataRealtime({
+                type: "update-old",
+                data: newDataSocketWithBotData
+            })
+
+
+            res.customResponse(200, "Copy Strategies To Symbol Successful", []);
+
+        }
+
+        catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+
+    },
+
+    copyMultipleStrategiesToBot: async (req, res) => {
+
+        try {
+            const { symbolListData, symbolList } = req.body
+
+            const TimeTemp = new Date().toString();
+
+            const bulkOperations = symbolListData.map(({ _id, value, parentID, ...restData }) => ({
+                updateOne: {
+                    filter: { _id: parentID },
+                    update: {
+                        $push: {
+                            children: {
+                                $each: symbolList.map(symbol => ({
+                                    ...restData,
+                                    botID: symbol,
+                                    TimeTemp
+                                }))
+                            }
+                        }
+                    }
+                }
+            }));
+
+            const bulkResult = await StrategiesModel.bulkWrite(bulkOperations);
+
+
+            const newDataSocketWithBotData = await dataCoinByBitController.getAllStrategiesNewUpdate(TimeTemp)
+
+            newDataSocketWithBotData.length > 0 && dataCoinByBitController.handleSendDataRealtime({
+                type: "update-old",
+                data: newDataSocketWithBotData
+            })
+            res.customResponse(200, "Copy Strategies To Bot Successful", "");
+
+
+
+        }
+
+        catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+
+    },
+
+    // syncSymbol: async (req, res) => {
+    //     try {
+
+    //         const listSymbolObject = await dataCoinByBitController.getSymbolFromCloud();
+
+    //         if (listSymbolObject?.length) {
+
+    //             // const existingDocs = await StrategiesModel.find({ value: { $in: listSymbolObject.map(item => item.symbol) } });
+    //             const existingDocs = await StrategiesModel.find();
+
+    //             const existingValues = existingDocs.reduce((pre, cur) => {
+    //                 const symbol = cur.value
+    //                 pre[symbol] = symbol
+    //                 return pre
+    //             }, {});
+
+    //             const newSymbolList = []
+    //             const newSymbolNameList = []
+
+    //             listSymbolObject.forEach((value) => {
+    //                 const symbol = value.symbol
+
+    //                 if (!existingValues[symbol]) {
+    //                     newSymbolList.push({
+    //                         label: symbol,
+    //                         value: symbol,
+    //                         volume24h: value.volume24h,
+    //                         children: [],
+    //                     });
+    //                     newSymbolNameList.push(symbol);
+    //                 }
+    //                 else {
+    //                     delete existingValues[symbol]
+    //                 }
+    //             })
+    //             const deleteList = Object.values(existingValues)
+
+    //             const insertSymbolNew = StrategiesModel.insertMany(newSymbolList)
+
+    //             const bulkOperations = listSymbolObject.map(data => ({
+    //                 updateOne: {
+    //                     filter: { "label": data.symbol },
+    //                     update: {
+    //                         $set: {
+    //                             "volume24h": data.volume24h,
+    //                         }
+    //                     }
+    //                 }
+    //             }));
+
+
+    //             const insertVol24 = StrategiesModel.bulkWrite(bulkOperations);
+    //             const bulkOperationsDeletedRes = StrategiesModel.deleteMany({ value: { $in: deleteList } })
+
+    //             await Promise.allSettled([insertSymbolNew, insertVol24, bulkOperationsDeletedRes])
+
+    //             if (newSymbolList.length > 0) {
+
+    //                 const newSymbolResult = await StrategiesModel.find({
+    //                     value: { $in: newSymbolNameList }
+    //                 })
+
+    //                 dataCoinByBitController.sendDataRealtime({
+    //                     type: "sync-symbol",
+    //                     data: newSymbolResult
+    //                 })
+    //                 res.customResponse(200, "Have New Sync Successful", {
+    //                     new: newSymbolList,
+    //                     deleted: deleteList
+    //                 })
+
+    //             }
+    //             else {
+    //                 res.customResponse(200, "Sync Successful", {
+    //                     list: listSymbolObject,
+    //                     deleted: deleteList
+    //                 })
+    //             }
+    //         }
+    //         else {
+    //             res.customResponse(400, "Sync Failed", []);
+    //         }
+
+    //     } catch (error) {
+    //         res.status(500).json({ message: error.message });
+    //     }
+    // },
+
+    transferFunds: async (amount, FromWallet, ToWallet) => {
+
+
+        const client = dataCoinByBitController.getRestClientV5Config({
+            ApiKey: API_KEY,
+            SecretKey: SECRET_KEY,
+        });
+
+
+        let myUUID = uuidv4();
+        client.createInternalTransfer(
+            myUUID,
+            'USDT',
+            amount,
+            FromWallet,
+            ToWallet,
+        )
+            .then((response) => {
+                console.log(response);
+            })
+            .catch((error) => {
+                console.error(error);
+            });
+    },
+
+
+    balanceWallet: async (req, res) => {
+
+        try {
+            // FUND: Spot
+            // UNIFIED: Future
+            const { amount, futureLarger, botID } = req.body
+
+            const resultApiKey = await dataCoinByBitController.getApiKeyByBot(botID)
+
+            if (resultApiKey) {
+
+                let typeTransfer = "FUNDING_UMFUTURE"
+
+                if (futureLarger) {
+                    typeTransfer = "UMFUTURE_FUNDING"
+                }
+
+                const client = dataCoinByBitController.getRestClientV5Config({
+                    ApiKey: resultApiKey.API_KEY,
+                    SecretKey: resultApiKey.SECRET_KEY,
+                    Demo: resultApiKey.Demo,
+
+                })
+
+                // console.log(myUUID, FromWallet, ToWallet, amount, futureLarger);
+                client.submitUniversalTransfer({
+                    type: typeTransfer,
+                    amount,
+                    asset: "USDT",
+                })
+                    .then((response) => {
+                        response ? res.customResponse(200, "Saving Successful", "") : res.customResponse(500, "Saving Error", "")
+                    })
+                    .catch((error) => {
+                        console.log(error);
+                        res.customResponse(500, "Saving Error", "");
+                    });
+            }
+            else {
+                res.customResponse(500, "Saving Error", "");
+            }
+
+        }
+        catch (error) {
+
+            res.customResponse(500, "Saving Error", "");
+        }
+    },
+
+    getApiKeyByBot: async (botID) => {
+
+        const resultApi = await BotModel.findOne({ _id: botID })
+
+        if (!resultApi) {
+            return ""
+        }
+
+        return {
+            API_KEY: resultApi.ApiKey,
+            SECRET_KEY: resultApi.SecretKey
+        }
+    },
+
+    getFutureAvailable: async (req, res) => {
+
+        try {
+            const botID = req.params.id
+
+            const resultApiKey = await dataCoinByBitController.getApiKeyByBot(botID)
+
+            if (resultApiKey) {
+
+                const client = dataCoinByBitController.getRestClientV5Config({
+                    ApiKey: resultApiKey.API_KEY,
+                    SecretKey: resultApiKey.SECRET_KEY,
+                    Demo: resultApiKey.Demo,
+
+                })
+
+                // get field totalWalletBalance
+                await client.getWalletBalances({
+                    quoteAsset: "USDT",
+                }).then((result) => {
+
+                    let spotFutureData = { spot: '0', future: '0' };
+
+                    for (const item of result) {
+                        if (item.walletName === 'Funding') {
+                            spotFutureData.spot = +item.balance;
+                        } else if (item.walletName === 'USDⓈ-M Futures') {
+                            spotFutureData.future = +item.balance;
+                        }
+                        // Thoát sớm nếu đã tìm đủ
+                        if (spotFutureData.spot !== '0' && spotFutureData.future !== '0') break;
+                    }
+                    res.customResponse(200, "Get Spot-Future Successful", spotFutureData);
+                })
+                    .catch((error) => {
+                        res.customResponse(400, error.message, "");
+                    });
+            }
+            else {
+                res.customResponse(400, "Get Future Available Failed", "");
+            }
+
+        } catch (error) {
+            res.customResponse(500, "Get Future Available Error", "");
+
+        }
+
+    },
+
+    getSpotTotal: async (req, res) => {
+
+        try {
+            const botID = req.params.id
+
+            const resultApiKey = await dataCoinByBitController.getApiKeyByBot(botID)
+
+            if (resultApiKey) {
+
+                const client = dataCoinByBitController.getRestClientV5Config({
+                    ApiKey: resultApiKey.API_KEY,
+                    SecretKey: resultApiKey.SECRET_KEY,
+                    Demo: resultApiKey.Demo,
+
+                })
+
+                await client.getAllCoinsBalance({
+                    accountType: 'FUND',
+                    coin: 'USDT'
+                }).then((result) => {
+                    const retCode = result.retCode
+                    res.customResponse(retCode == 0 ? 200 : 400, retCode == 0 ? "Get Spot Total Successful" : result.retMsg, result);
+                })
+                    .catch((error) => {
+                        res.customResponse(400, error.message, "");
+                    });
+            }
+            else {
+                res.customResponse(400, "Get Spot Total Failed", "");
+            }
+
+        } catch (error) {
+            res.customResponse(500, "Get Spot Total Error", "");
+
+        }
+
+    },
+
+    // OTHER
+
+    getFutureSpotBE: async (botID) => {
+
+        try {
+
+            const resultApiKey = await dataCoinByBitController.getApiKeyByBot(botID)
+
+            if (resultApiKey) {
+                const API_KEY = resultApiKey.API_KEY;
+                const SECRET_KEY = resultApiKey.SECRET_KEY;
+
+                const client = dataCoinByBitController.getRestClientV5Config({
+                    ApiKey: API_KEY,
+                    SecretKey: SECRET_KEY,
+                    Demo: resultApiKey.Demo,
+
+                })
+
+                // get field totalWalletBalance
+                const getFuture = client.getWalletBalance({
+                    accountType: 'UNIFIED',
+                    coin: 'USDT',
+                })
+                const getSpot = client.getAllCoinsBalance({
+                    accountType: 'FUND',
+                    coin: 'USDT'
+                })
+                const result = await Promise.all([getFuture, getSpot])
+
+                if (result.every(item => item.retCode === 0)) {
+                    return {
+                        future: result[0]?.result?.list?.[0]?.coin[0].walletBalance || 0,
+                        spotTotal: result[1]?.result?.balance?.[0]?.walletBalance || 0,
+                        API_KEY,
+                        SECRET_KEY
+                    }
+                }
+                return {}
+            }
+            else {
+                return {}
+            }
+
+        } catch (error) {
+            return {}
+
+        }
+    },
+
+    getFutureBE: async (botData) => {
+
+        try {
+
+            const resultApiKey = await dataCoinByBitController.getApiKeyByBot(botData.id)
+
+            if (resultApiKey) {
+                const API_KEY = resultApiKey.API_KEY;
+                const SECRET_KEY = resultApiKey.SECRET_KEY;
+
+                const client = dataCoinByBitController.getRestClientV5Config({
+                    ApiKey: API_KEY,
+                    SecretKey: SECRET_KEY,
+                    Demo: resultApiKey.Demo,
+                })
+
+                // get field totalWalletBalance
+                const result = await client.getWalletBalances({
+                    quoteAsset: "USDT",
+                })
+
+                if (result) {
+                    return {
+                        totalWalletBalance: result.find(item => item.walletName === 'USDⓈ-M Futures')?.balance || 0,
+                        botData
+                    }
+                }
+                return {
+                    totalWalletBalance: 0,
+                    botData,
+                    errorMessage: result.retMsg
+                }
+
+            }
+        } catch (error) {
+            const errorMessage = error.message
+            return {
+                totalWalletBalance: 0,
+                botData,
+                errorMessage
+            }
+        }
+    },
+    balanceWalletBinanceBE: async ({ amount, futureLarger, botID }) => {
+        try {
+
+            const resultApiKey = await dataCoinByBitController.getApiKeyByBot(botID)
+
+            if (resultApiKey) {
+
+                let typeTransfer = "FUNDING_UMFUTURE"
+
+                if (futureLarger) {
+                    typeTransfer = "UMFUTURE_FUNDING"
+                }
+
+                const client = dataCoinByBitController.getRestClientV5Config({
+                    ApiKey: resultApiKey.API_KEY,
+                    SecretKey: resultApiKey.SECRET_KEY,
+                    Demo: resultApiKey.Demo,
+
+                })
+
+                // console.log(myUUID, FromWallet, ToWallet, amount, futureLarger);
+                client.submitUniversalTransfer({
+                    type: typeTransfer,
+                    amount,
+                    asset: "USDT",
+                })
+                    .then((response) => {
+                        response ? console.log("Saving Successful") : console.log("Saving Failed")
+                    })
+                    .catch((error) => {
+                        console.log("[!] Saving Error", error);
+                    });
+            }
+            else {
+                console.log("[!] Saving Error");
+            }
+
+        }
+        catch (error) {
+
+            console.log("[!] Saving Error", error);
+        }
+    },
+
+    getAllStrategiesActive: async (allbotOfServer) => {
+        try {
+
+            const resultFilter = await StrategiesModel.aggregate([
+                {
+                    $match: {
+                        "children.IsActive": true,
+                        "children.botID": { $in: allbotOfServer },
+                    }
+                },
+                {
+                    $project: {
+                        label: 1,
+                        value: 1,
+                        volume24h: 1,
+                        children: {
+                            $filter: {
+                                input: "$children",
+                                as: "child",
+                                cond: {
+                                    $and: [
+                                        { $eq: ["$$child.IsActive", true] },
+                                        { $in: ["$$child.botID", allbotOfServer] } // Kiểm tra botID có nằm trong allbotOfServer
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]);
+            const result = await StrategiesModel.populate(resultFilter, {
+                path: 'children.botID',
+            })
+
+            const handleResult = result.flatMap((data) => data.children.map(child => {
+                child.symbol = data.value
+                child.value = `${data._id}-${child._id}`
+                return child
+            })) || []
+
+            return handleResult
+
+            // const handleResult = result.reduce((result, child) => {
+            //     if (child.children.length > 0 && child.children.some(childData =>
+            //         dataCoinByBitController.checkConditionStrategies(childData)
+            //     )) {
+            //         result.push({
+            //             ...child,
+            //             children: child.children.filter(item =>
+            //                 dataCoinByBitController.checkConditionStrategies(item)
+            //             )
+            //         })
+            //     }
+            //     return result
+            // }, []) || []
+
+        } catch (err) {
+            console.log(err);
+
+            return []
+        }
+    },
+    getAllSymbolBE: async (req, res) => {
+        try {
+            const result = await StrategiesModel.find()
+            return result || []
+
+        } catch (err) {
+            return []
+        }
+    },
+
+    // SCANNER
+
+    createStrategiesMultipleStrategyBE: async ({
+        dataInput,
+        botID,
+        botName,
+        symbol,
+        scannerID,
+        OCAdjust,
+    }) => {
+
+        try {
+            const TimeTemp = new Date().toString()
+
+            let result = ""
+
+            if (dataInput.PositionSide === "Long-Short") {
+                result = await StrategiesModel.updateMany(
+                    { "value": symbol },
+                    {
+                        "$push": {
+                            "children": [
+                                { ...dataInput, botID, scannerID, TimeTemp, PositionSide: "Long" },
+                                { ...dataInput, botID, scannerID, TimeTemp, PositionSide: "Short" },
+                            ]
+                        }
+                    },
+                );
+            }
+            else {
+                result = await StrategiesModel.updateMany(
+                    { "value": symbol },
+                    { "$push": { "children": { ...dataInput, botID, scannerID, TimeTemp } } },
+                );
+            }
+
+            const resultFilter = await StrategiesModel.aggregate([
+                {
+                    $match: {
+                        children: {
+                            $elemMatch: {
+                                IsActive: true,
+                                TimeTemp: TimeTemp,
+                                scannerID: new mongoose.Types.ObjectId(scannerID),
+                            }
+                        },
+                        value: symbol
+                    }
+                },
+                {
+                    $project: {
+                        label: 1,
+                        value: 1,
+                        volume24h: 1,
+                        children: {
+                            $filter: {
+                                input: "$children",
+                                as: "child",
+                                cond: {
+                                    $and: [
+                                        { $eq: ["$$child.IsActive", true] },
+                                        { $eq: ["$$child.TimeTemp", TimeTemp] },
+                                        { $eq: ["$$child.scannerID", new mongoose.Types.ObjectId(scannerID)] },
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]);
+
+            const resultGet = await StrategiesModel.populate(resultFilter, {
+                path: 'children',
+                populate: [
+                    { path: 'botID' },
+                    { path: 'scannerID' }
+                ]
+            });
+
+            const handleResult = resultGet.flatMap((data) => data.children.map(child => {
+                child.symbol = data.value
+                child.value = `${data._id}-${child._id}`
+                return child
+            })) || []
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+                return {
+                    message: `[Mongo] Add New Mul-Config Strategies ( ${botName} - ${symbol} - ${dataInput.PositionSide} - ${dataInput.Candlestick} ) Successful: OCAdjust: ${OCAdjust} = ${dataInput.OrderChange}`,
+                    data: handleResult || []
+                }
+            }
+            else {
+                return {
+                    message: `[Mongo] Add New Mul-Config Strategies ( ${botName} - ${symbol} - ${dataInput.PositionSide} - ${dataInput.Candlestick} ) Failed: OCAdjust: ${OCAdjust} = ${dataInput.OrderChange}`,
+                    data: []
+                }
+            }
+
+        }
+
+        catch (error) {
+            return {
+                message: `[Mongo] Add New Mul-Config Strategies ( ${botName} - ${symbol} - ${dataInput.PositionSide} - ${dataInput.Candlestick} ) Error: ${error.message}`,
+                data: []
+            }
+        }
+
+    },
+    updateStrategiesMultipleStrategyBE: async ({
+        scannerID,
+        newOC,
+        symbol,
+    }) => {
+
+        try {
+            const TimeTemp = new Date().toString()
+
+            const result = await StrategiesModel.updateMany(
+                {
+                    "children.scannerID": scannerID,
+                    "children.IsActive": true,
+                    "value": symbol
+                },
+                {
+                    $set: {
+                        "children.$[elem].OrderChange": newOC,
+                        "children.$[elem].TimeTemp": TimeTemp,
+                    }
+                },
+                {
+                    arrayFilters: [{ "elem.scannerID": scannerID }]
+                }
+            );
+
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+                const resultFilter = await StrategiesModel.aggregate([
+                    {
+                        $match: {
+                            children: {
+                                $elemMatch: {
+                                    IsActive: true,
+                                    TimeTemp: TimeTemp,
+                                    scannerID: new mongoose.Types.ObjectId(scannerID),
+                                }
+                            },
+                            value: symbol
+                        }
+                    },
+                    {
+                        $project: {
+                            label: 1,
+                            value: 1,
+                            volume24h: 1,
+                            children: {
+                                $filter: {
+                                    input: "$children",
+                                    as: "child",
+                                    cond: {
+                                        $and: [
+                                            { $eq: ["$$child.IsActive", true] },
+                                            { $eq: ["$$child.TimeTemp", TimeTemp] },
+                                            { $eq: ["$$child.scannerID", new mongoose.Types.ObjectId(scannerID)] },
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]);
+
+                const resultGet = await StrategiesModel.populate(resultFilter, {
+                    path: 'children',
+                    populate: [
+                        { path: 'botID' },
+                        { path: 'scannerID' }
+                    ]
+                });
+
+                const handleResult = resultGet.flatMap((data) => data.children.map(child => {
+                    child.symbol = data.value
+                    child.value = `${data._id}-${child._id}`
+                    return child
+                })) || []
+                return handleResult
+            }
+            else {
+                return []
+            }
+        }
+
+        catch (error) {
+            console.log('updateStrategiesMultipleStrategyBE error:', error);
+            return []
+        }
+
+    },
+
+    deleteStrategiesMultipleStrategyBE: async ({
+        scannerID,
+        symbol,
+        Candlestick,
+        PositionSide,
+        botName,
+    }) => {
+        try {
+
+            const result = await StrategiesModel.updateMany(
+                {
+                    "children.scannerID": scannerID,
+                    "value": symbol
+                },
+                { $pull: { "children": { scannerID } } }
+            );
+
+            if (result.acknowledged && result.matchedCount !== 0) {
+
+                console.log(`[Mongo] Delete Mul-Config Strategies ( ${botName} - ${symbol} - ${PositionSide} - ${Candlestick} ) Successful`);
+                return true
+            }
+            else {
+                console.log(`[Mongo] Delete Mul-Config Strategies ( ${botName} - ${symbol} - ${PositionSide} - ${Candlestick} ) Failed`);
+                return false
+            }
+
+        } catch (error) {
+            console.log(`[Mongo] Delete Mul-Config Strategies ( ${botName} - ${symbol} - ${PositionSide} - ${Candlestick} ) Error: ${error.message} `)
+            return false
+        }
+    },
+
+    syncSymbolBE: async () => {
+        try {
+
+            const listSymbolObject = await dataCoinByBitController.getSymbolFromCloud();
+
+            const listSymbolUpdate = []
+            if (listSymbolObject?.length) {
+
+                listSymbolObject.forEach((value) => {
+                    const symbol = value.symbol
+
+                    listSymbolUpdate.push({
+                        value: symbol,
+                        volume24h: value.volume24h,
+                    });
+                })
+                return listSymbolUpdate
+            }
+            else {
+                return []
+            }
+        } catch (error) {
+            return []
+        }
+    },
+
+    deleteAllScannerBE: async (allbotOfServer) => {
+
+        try {
+
+            await StrategiesModel.updateMany(
+                {
+                    "children.botID": { $in: allbotOfServer }
+                },
+                {
+                    $pull: {
+                        children: {
+                            scannerID: { $exists: true, $ne: null },
+                            botID: { $in: allbotOfServer }
+                        }
+                    }
+                }
+            );
+            console.log("[V] Delete All Strategies By BigBabol Successful");
+
+        } catch (error) {
+            console.log("[V] Delete All Strategies By BigBabol Error:", error);
+        }
+    },
+
+    deleteAllForUPcode: async (allbotOfServer) => {
+        try {
+
+            const cancelPositionV3 = PositionV3Model.deleteMany({
+                botID: { $in: allbotOfServer }
+            })
+            await Promise.allSettled([cancelPositionV3])
+
+            console.log("[V] RESET All For New Successful");
+
+        } catch (error) {
+            console.log("[V] RESET All For New error:", error);
+        }
+    },
+    deleteConfigBE: async ({
+        symbol,
+        configID,
+        strategy,
+        botName,
+        scannerLabel = ""
+    }) => {
+        const PositionSide = strategy.PositionSide
+        const OrderChange = strategy.OrderChange
+        try {
+            const result = await StrategiesModel.updateOne(
+                { label: symbol },
+                { $pull: { children: { _id: configID } } }
+            )
+
+            if (result.deletedCount !== 0) {
+                console.log(`[Mongo] Delete config ( ${scannerLabel} - ${botName} - ${symbol} - ${PositionSide} - ${OrderChange} ) successful`);
+                return true
+            }
+            else {
+                console.log(`[! Mongo] Delete config ( ${scannerLabel} - ${botName} - ${symbol} - ${PositionSide} - ${OrderChange} ) failed`);
+                return false
+
+            }
+        } catch (error) {
+            console.log(`[! Mongo] Delete config ( ${scannerLabel} - ${botName} - ${symbol} - ${PositionSide} - ${OrderChange} ) error: ${error.message}`);
+            return false
+        }
+    },
+    setAutoOffVolBE: async (botListID, SERVER_IP) => {
+        try {
+
+
+            const TimeTemp = `${SERVER_IP}-${Date.now()}`
+
+            const botListDataAutoOFf = await BotModel.find({
+                _id: { $in: botListID },
+                Status: 'Running',
+                volAutoOff: { $exists: true, $ne: null, $gt: 0 }
+            });
+
+            if (botListDataAutoOFf?.length > 0) {
+
+                const bulkOperations = botListDataAutoOFf.map(data => ({
+                    updateMany: {
+                        filter: {
+                            "children.botID": data._id,
+                            volume24h: { $lt: data.volAutoOff * 10 ** 6 }
+                        },
+                        update: {
+                            $set: {
+                                "children.$[elem].IsActive": false,
+                                "children.$[elem].TimeTemp": TimeTemp,
+                            }
+                        },
+                        arrayFilters: [
+                            { "elem.botID": data._id }
+                        ]
+                    }
+                }));
+
+                await StrategiesModel.bulkWrite(bulkOperations);
+
+                console.log(`[V] Set Auto Off Vol Successful`);
+
+                const newDataSocketWithBotData = await dataCoinByBitController.getAllStrategiesNewUpdate(TimeTemp)
+                return newDataSocketWithBotData
+            }
+            return []
+
+        }
+
+        catch (error) {
+            console.log(`[!] Set Auto Off Vol Error`, error);
+            return []
+        }
+    },
+}
+
+module.exports = dataCoinByBitController 

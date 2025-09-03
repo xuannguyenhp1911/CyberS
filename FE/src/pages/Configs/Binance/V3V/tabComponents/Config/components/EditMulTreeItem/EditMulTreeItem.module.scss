@@ -1,0 +1,20 @@
+.radioGroupAction {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+}
+
+@media (max-width: 740px) {
+
+    .radioGroupAction {
+        &Item {
+            flex-basis: 100%;
+            display: flex !important;
+
+            .radioItem {
+                width: 30%;
+                white-space: nowrap;
+            }
+        }
+    }
+}

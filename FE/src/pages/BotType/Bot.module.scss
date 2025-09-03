@@ -1,0 +1,58 @@
+.bot {
+    &FilterList {
+        display: flex;
+        flex-wrap: wrap;
+        margin: -12px;
+        &Item {
+            margin: 12px;
+            .label {
+                opacity: .6;
+                margin-bottom: 10px;
+                font-size: 1.1rem;
+            }
+
+            .select {
+                min-width: 150px;
+                height: fit-content;
+            }
+
+            &:nth-child(n+2) {
+            }
+        }
+    }
+
+    &TableContainer {
+       
+
+        &Title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        &Data {
+            margin-top: 16px;
+        }
+    }
+    
+    .icon {
+        color: #1976d2;
+        vertical-align: sub;
+        cursor: pointer;
+    }
+}
+
+@media (max-width:740px) {
+    .bot {
+        &FilterList {
+
+            &Item {
+                flex: 1;
+
+                .select {
+                    min-width: 100%;
+                }
+            }
+        }
+    }
+}

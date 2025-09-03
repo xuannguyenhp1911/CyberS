@@ -1,0 +1,57 @@
+.loginPage {
+    width: 100vw;
+    height: 100svh;
+    display: flex;
+    background-color: var(--bgColor);
+
+    &Body {
+        text-align: center;
+        margin: auto;
+
+        .headingLogo {
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            .text {
+                font-size: 2rem;
+                margin-left: 10px;
+                font-weight: 500;
+                vertical-align: middle;
+            }
+        }
+
+        .form {
+            background-color: var(--bgColorBlur);
+            padding: 28px 28px 32px;
+            box-shadow: 0px 0 30px rgba(1, 41, 112, 0.1);
+            margin-bottom: 24px;
+
+            .formTitle {
+                .textMain {
+                    color: var(--blueLightColor);
+                    font-size: 1.6rem;
+                    font-weight: 600;
+                    margin-bottom: 6px;
+                }
+            }
+
+            .formData {
+                display: flex;
+                flex-direction: column;
+                text-align: left;
+                margin-top: 28px;
+
+                .formControl {
+                    margin-bottom: 16px;
+                }
+
+                .label {
+                    margin-bottom: 6px;
+                }
+            }
+
+        }
+    }
+}

@@ -1,0 +1,25 @@
+.dialog {
+    &Form {
+        display: flex;
+        flex-direction: column;
+
+        .formControl {
+            margin-bottom: 16px;
+        }
+
+        .label {
+            margin-bottom: 6px;
+        }
+
+    }
+
+}
+.botRunning {
+    margin: auto;
+    background: #c9661e;
+    color: #ffffff;
+    padding: 8px 12px;
+    border-radius: 3px;
+    width: -moz-fit-content;
+    width: fit-content;
+}

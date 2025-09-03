@@ -1,0 +1,119 @@
+/* @import "rsuite/dist/rsuite.css"; */
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+* {
+  font-size: 16px;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+
+  --bgColor: white;
+  --bgColorBlur: #f6f9ff;
+  --blueColor: #012970;
+  --yellowColor: #edc655;
+  --blueLightColor: #4154f1;
+  --borderColor: #e1e1e1;
+  --hoverColor: #f6f9ff;
+  --linkColor: #012970;
+  --textColor: black;
+  --ownBot: #b3ccfb3b;
+  --redColor: red;
+}
+
+.darkTheme {
+  color: var(--textColor);
+  --textColor: #d5d5d5;
+  --hoverColor: #3f3f3f;
+  --bgColor: #181818;
+  --bgColorBlur: #2c2c2c;
+  --borderColor: #414141;
+  --blueLightColor: #8693ff;
+  --linkColor: var(--textColor);
+  --redColor: #ff5d5d;
+  --ownBot: #3c537d29;
+}
+
+.own-bot {
+  background-color: var(--ownBot);
+}
+
+.IsBetaStyles {
+  background-color: #f6b58026;
+}
+
+.formControlErrorLabel {
+  color: var(--redColor);
+  margin-top: 6px;
+}
+
+a,
+a:hover,
+a:active,
+a:focus {
+  text-decoration: none;
+  color: var(--textColor);
+}
+
+a:hover,
+a:active,
+a:focus {
+  background-color: var(--bgColorBlur);
+}
+
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input {
+  background-color: transparent;
+  color: var(--textColor);
+}
+
+.rs-check-tree .rs-check-tree-node-label .rs-check-item .rs-checkbox-checker .rs-check-tree-node-label-content,
+.rs-check-tree-node .rs-check-item {
+  min-width: 100%;
+}
+
+.css-1ex1afd-MuiTableCell-root {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+
+/* .rs-check-tree-group {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.rs-check-tree {
+  overflow: hidden !important;
+  max-height: fit-content !important;
+  height: auto !important;
+} */
+
+.MuiMenu-list {
+  max-height: 300px;
+}
+
+@media (max-width: 740px) {
+  * {
+    font-size: 14px;
+  }
+}

@@ -1,0 +1,114 @@
+.treeParent {
+    margin-top: 12px;
+
+    .label {
+        font-weight: 600;
+         color:var(--textColor);;
+        border: 1px solid var(--borderColor);
+        padding: 3px;
+        border-radius: 6px;
+        margin-left: 6px;
+    }
+
+
+    .tableHeadCell,
+    .tableBodyCell {
+color: var(--textColor);
+        min-width: 80px;
+        text-align: center;
+        padding:  12px;
+    }
+
+    .tableHeadCell {
+         color:var(--textColor);;
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+
+    .tableBodyCell {
+color: var(--textColor);
+        font-size: 1rem;
+        white-space: normal;
+    }
+
+    .tableDataContainer {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        display: none;
+    }
+
+    .iconArrow {
+        font-size: 1.8rem;
+    }
+
+    .iconArrowUp {
+        display: none;
+    }
+
+    .icon {
+        color: #1976d2;
+        cursor: pointer;
+    }
+
+    .checkboxStyle {
+        width: 16px;
+        height: 16px;
+         color:var(--textColor);
+        margin-right: 6px;
+        cursor: pointer;
+    }
+}
+
+.showNoteContent {
+    .tableDataContainer {
+        display: block;
+    }
+
+    .iconArrowDown {
+        display: none;
+    }
+
+    .iconArrowUp {
+        display: block;
+    }
+}
+
+.settingNode {
+
+    &Item {
+        display: flex;
+        align-items: center;
+        padding: 10px 16px;
+        transition: .1s;
+        cursor: pointer;
+
+        &:hover {
+            background-color: var(--borderColor);
+        }
+
+        &Text {
+            font-size: 1rem;
+            margin-left: 10px;
+        }
+
+        &Icon {
+            font-size: 1.3rem;
+            color: #0d6efd
+        }
+    }
+}
+
+@media (max-width: 740px) {
+    .treeParent {
+        .label {
+
+            font-size: 1.1rem;
+
+        }
+
+        .tableHeadCell {
+            font-size: 1.1rem;
+        }
+    }
+}

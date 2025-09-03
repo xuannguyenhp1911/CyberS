@@ -1,0 +1,104 @@
+@mixin boxStyleItem {
+    padding: 16px;
+    background-color: var(--bgColor);
+}
+
+.myProfile {
+    display: flex;
+    flex-wrap: wrap;
+
+    &Info {
+        flex-basis:35%;
+        margin-right: 12px;
+        @include boxStyleItem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+
+    &Change {
+        flex: 1;
+        @include boxStyleItem;
+    }
+
+    .overview {
+        .text {
+            font-size: 1.2rem;
+            font-weight: 500;
+            margin-right: 3px;
+        }
+
+        &Header {
+            display: flex;
+            align-items: center;
+        }
+
+        &Info {
+            display: flex;
+            justify-content: space-between;
+
+            &List {
+                width: 100%;
+
+                &Item {
+                    display: flex;
+                    margin-top: 24px;
+                    word-break: break-word;
+                    flex-wrap: wrap;
+
+                    .label {
+                        color: var(--textColor);
+                        min-width: 180px;
+                        opacity: .7;
+                        font-weight: 600;
+                    }
+
+                    .icon {
+                        margin-left: 3px;
+                        font-size: 1rem;
+                        opacity: .6;
+                        cursor: pointer;
+                    }
+                }
+            }
+        }
+
+        .formControl {
+            flex: 1;
+        }
+    }
+}
+
+@media (max-width:740px) {
+    .myProfile {
+        display: flex;
+        flex-wrap: wrap;
+
+        &Info {
+            flex-basis: 100%;
+            margin-right: 0;
+            margin-bottom: 12px;
+
+        }
+
+        .overview {
+            &Info {
+
+                &List {
+                    &Item {
+
+                        .label {
+                            flex-basis: 100%;
+                        }
+                    }
+                }
+            }
+
+            .formControl {
+                flex: auto;
+                margin-top: 6px;
+            }
+        }
+    }
+}
