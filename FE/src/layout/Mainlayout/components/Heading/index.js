@@ -81,7 +81,7 @@ function Heading({
         <div className={styles.heading}>
             <NavLink className={styles.headingLogo} to="#">
                 <img src={logoImage} />
-                <span className={styles.text}>CyberBot</span>
+                <span className={styles.text}>CyberS</span>
 
                 { <img
                     src={teleIcon}

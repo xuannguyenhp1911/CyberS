@@ -14,7 +14,7 @@ function NotFound() {
             flexDirection: "column",
             background:"var(--bgColor)"
         }}>
-            <Helmet title={`404 | CyberBot`} />
+            <Helmet title={`404 | CyberS`} />
             <div style={{
                 margin: "auto",
                 textAlign: "center",

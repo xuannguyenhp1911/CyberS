@@ -64,11 +64,11 @@ function LoginPage() {
                 handleSubmit(handleLogin)()
             }
         }}>
-            <Helmet title={`Login | CyberBot`} />
+            <Helmet title={`Login | CyberS`} />
             <div className={styles.loginPageBody}>
                 <div className={styles.headingLogo} >
                     <img src={logoImage} style={{ width: "50px" }} />
-                    <span className={styles.text}>CyberBot</span>
+                    <span className={styles.text}>CyberS</span>
                 </div>
                 <form className={styles.form}>
                     <div className={styles.formTitle}>
