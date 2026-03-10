@@ -6,14 +6,13 @@ import { useState, memo, useEffect, useRef } from "react";
 import AddBreadcrumbs from "../../components/BreadcrumbsCutom";
 import DataGridCustom from "../../components/DataGridCustom";
 import AddBot from "./components/AddBot";
-import { deleteBot, getAllBot, getAllBotByGroupCreatedByUserID, getAllBotBySameGroup, getAllBotByUserID, getTotalFutureSpot, getTotalFutureSpotByBot, setLever, setMargin, updateBot } from "../../services/botService";
+import { deleteBot, getAllBot, getAllBotByGroupCreatedByUserID, getAllBotBySameGroup, getAllBotByUserID, getTotalFutureSpot, getTotalFutureSpotByBot, updateBot, updateBotCopyTrading } from "../../services/botService";
 import styles from "./Bot.module.scss"
 import { useDispatch, useSelector } from 'react-redux';
 import { addMessageToast } from '../../store/slices/Toast';
 import DialogCustom from '../../components/DialogCustom';
 import { formatNumber } from '../../functions';
 import { getAllBotType } from '../../services/botTypeService';
-import { LoadingButton } from '@mui/lab';
 import AddServer from './components/AddServer';
 import EditServer from './components/EditServer';
 import { getAllGroup } from '../../services/groupService';
@@ -210,6 +209,56 @@ function Bot() {
 
     ];
 
+    if (!["Trader", "ManagerTrader"].includes(roleName)) {
+        const botMasterColumn = {
+            field: 'botMaster',
+            headerName: 'Bot Master',
+            minWidth: 220,
+            flex: window.innerWidth <= 740 ? undefined : 1,
+            renderCell: params => {
+                const rowData = params.row;
+                const rowID = rowData?._id;
+                const botMasterID = rowData?.botIDCopy?._id || "";
+                const botMasterOptions = getBotMasterOptions(rowData)
+                const allowEdit = roleName === "SuperAdmin" || rowData?.OwnBot
+                const loading = loadingBotMasterID === rowID
+
+                if (loading) {
+                    return <CircularProgress size={18} />
+                }
+
+                return (
+                    <Select
+                        size="small"
+                        value={botMasterID}
+                        displayEmpty
+                        disabled={!allowEdit}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => {
+                            const newBotMasterID = event.target.value
+                            handleUpdateBotMaster({
+                                botData: rowData,
+                                botMasterID: newBotMasterID
+                            })
+                        }}
+                        style={{
+                            width: "100%",
+                            height: "35px"
+                        }}
+                    >
+                        {
+                            botMasterOptions.map(item => (
+                                <MenuItem value={item.value} key={item.value || "none"}>{item.label}</MenuItem>
+                            ))
+                        }
+                    </Select>
+                )
+            },
+        }
+        const botTypeIndex = tableColumns.findIndex(item => item.field === "botType")
+        tableColumns.splice(botTypeIndex + 1, 0, botMasterColumn)
+    }
+
     roleName !== "Trader" && tableColumns.push({
         field: 'Approval',
         headerName: 'Approval',
@@ -269,13 +318,13 @@ function Bot() {
     const [openDeleteBot, setOpenDeleteBot] = useState("");
     const [loadingGetMoney, setLoadingGetMoney] = useState(true);
     const [confirmActiveBot, setConfirmActiveBot] = useState(false);
-    const [loadingSetMargin, setLoadingSetMargin] = useState("");
     const [totalFutureSpot, setTotalFutureSpot] = useState(0);
     const [openAddServer, setOpenAddServer] = useState({
         data: "",
         dataChange: false
     });
     const [openEditServer, setOpenEditServer] = useState("");
+    const [loadingBotMasterID, setLoadingBotMasterID] = useState("");
 
     const totalFutureSpotOfMeDefault = useRef(0)
     const checkMyBotRef = useRef(true)
@@ -320,6 +369,86 @@ function Bot() {
             }
             return bot
         })
+    }
+
+    const getBotMasterOptions = (botData) => {
+        const currentBotID = botData?._id
+        const currentMasterID = botData?.botIDCopy?._id
+
+        const optionsData = [
+            {
+                label: "None",
+                value: "",
+            }
+        ]
+
+        const optionsMap = {}
+        botListDefaultRef.current.forEach(item => {
+            const itemID = item?._id
+            if (!itemID || itemID === currentBotID) {
+                return
+            }
+            if (item?.botType !== botData?.botType) {
+                return
+            }
+            if (item?.botIDCopy?._id) {
+                return
+            }
+            if (!(item?.Status === "Running" && item?.ApiKey && item?.SecretKey)) {
+                return
+            }
+            optionsMap[itemID] = {
+                label: item?.botName,
+                value: itemID,
+            }
+        })
+
+        currentMasterID && !optionsMap[currentMasterID] && (optionsMap[currentMasterID] = {
+            label: botData?.botIDCopy?.botName || "Unknown",
+            value: currentMasterID,
+        })
+
+        return optionsData.concat(Object.values(optionsMap))
+    }
+
+    const handleUpdateBotMaster = async ({ botData, botMasterID }) => {
+        if (!botData?._id) {
+            return
+        }
+
+        setLoadingBotMasterID(botData._id)
+        try {
+            const res = await updateBotCopyTrading({
+                id: botData._id,
+                botIDCopy: botMasterID,
+                botIDCopyOld: botData?.botIDCopy?._id
+            })
+
+            const { status, message } = res.data
+            dispatch(addMessageToast({
+                status,
+                message
+            }))
+
+            if (status === 200) {
+                const botMasterData = botListDefaultRef.current.find(item => item?._id === botMasterID)
+                setNewDateAfterSuccess({
+                    data: {
+                        botIDCopy: botMasterData ? {
+                            _id: botMasterData?._id,
+                            botName: botMasterData?.botName
+                        } : null
+                    },
+                    botID: botData._id
+                })
+            }
+        } catch (err) {
+            dispatch(addMessageToast({
+                status: 500,
+                message: "Update Bot Master Error",
+            }))
+        }
+        setLoadingBotMasterID("")
     }
     const handleUpdateBot = async ({ botID, data }) => {
         try {

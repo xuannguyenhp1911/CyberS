@@ -26,10 +26,8 @@ function TreeParent({
     dataCheckTreeDefaultRef,
     coinListDelist
 }) {
-
-
+    const hasCopyBot = treeData.children?.some(item => item?.botID?.botIDCopy)
     const userData = useSelector(state => state.userDataSlice.userData)
-
     const coinDelistData = coinListDelist.find(item => item.symbol == treeData.label)
 
     const dispatch = useDispatch()
@@ -335,7 +333,7 @@ function TreeParent({
                     style={{
                         color: coinDelistData && "var(--redColor)",
                     }}>
-                    {treeData.label.split("USDT")[0]}
+                    {treeData.label.split("USDT")[0]}{hasCopyBot && <span style={{ marginLeft: "4px" }}>[M]</span>}
                     <span style={{
                         fontWeight: "600",
                         marginLeft: "3px"

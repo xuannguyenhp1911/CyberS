@@ -17,11 +17,8 @@ function TreeParent({
     setDataCheckTree,
     dataCheckTreeDefaultRef
 }) {
-
-
+    const hasCopyBot = treeData.children?.some(item => item?.botID?.botIDCopy)
     const userData = useSelector(state => state.userDataSlice.userData)
-
-
     const dispatch = useDispatch()
 
     const [openSettingTreeNode, setOpenSettingTreeNode] = useState(false);
@@ -297,7 +294,7 @@ function TreeParent({
                 
                 
                 <p className={styles.label}>
-                    {treeData.label.split("USDT")[0]}
+                    {treeData.label.split("USDT")[0]}{hasCopyBot && <span style={{ marginLeft: "4px" }}>[M]</span>}
                     <span style={{
                         fontWeight: "600",
                         marginLeft: "3px"

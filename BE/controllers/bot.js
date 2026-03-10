@@ -525,7 +525,12 @@ const BotController = {
             const userID = req.params.id;
 
             // ref: .populate({ path: "coinID", models: "Coin" })
-            const data = await BotModel.find({ userID }, { telegramToken: 0 }).sort({ Created: -1 }).populate("userID", "userName roleName").populate("serverIP", "name");
+            const data = await BotModel.find({ userID }, { telegramToken: 0 })
+                .sort({ Created: -1 })
+                .populate("userID", "userName roleName")
+                .populate("serverIP", "name")
+                .populate("botIDCopy", "botName")
+                .populate("botIDBeCopyList", "botName");
             res.customResponse(res.statusCode, "Get All Bot Successful", data);
 
         } catch (err) {
@@ -613,7 +618,12 @@ const BotController = {
 
             const userIDList = resultGetAllGroup.flatMap((group) => group.member.map((member => member.userID)))
 
-            const data = await BotModel.find({ userID: { $in: [...userIDList, userID] } }).sort({ Created: -1 }).populate("userID", "userName roleName").populate("serverIP", "name");
+            const data = await BotModel.find({ userID: { $in: [...userIDList, userID] } })
+                .sort({ Created: -1 })
+                .populate("userID", "userName roleName")
+                .populate("serverIP", "name")
+                .populate("botIDCopy", "botName")
+                .populate("botIDBeCopyList", "botName");
 
             res.customResponse(res.statusCode, "Get All Bot Successful", data);
 
@@ -627,7 +637,12 @@ const BotController = {
 
             const resultGetAllUsersID = await UserModel.find({ groupID }, { telegramToken: 0 }).select('_id');
 
-            const data = await BotModel.find({ userID: { $in: resultGetAllUsersID } }).sort({ Created: -1 }).populate("userID", "userName roleName").populate("serverIP", "name");
+            const data = await BotModel.find({ userID: { $in: resultGetAllUsersID } })
+                .sort({ Created: -1 })
+                .populate("userID", "userName roleName")
+                .populate("serverIP", "name")
+                .populate("botIDCopy", "botName")
+                .populate("botIDBeCopyList", "botName");
             res.customResponse(200, "Get All Bot Successful", data);
 
         } catch (err) {
@@ -1422,22 +1437,67 @@ const BotController = {
     },
     updateBotCopyTrading: async (req, res) => {
         try {
+            const userRoleData = await UserModel.findById(req.user?._id).select("roleName");
+            if (["Trader", "ManagerTrader"].includes(userRoleData?.roleName)) {
+                return res.customResponse(403, "Permission Denied", "");
+            }
+
             const { id, botIDCopy, botIDCopyOld } = req.body;
+            const idConvert = mongoose.isValidObjectId(id) ? new mongoose.Types.ObjectId(id) : null;
+            const botIDCopyConvert = mongoose.isValidObjectId(botIDCopy) ? new mongoose.Types.ObjectId(botIDCopy) : null;
+            const botIDCopyOldConvert = mongoose.isValidObjectId(botIDCopyOld) ? new mongoose.Types.ObjectId(botIDCopyOld) : null;
 
-            const idConvert = new mongoose.Types.ObjectId(id)
-            const botIDCopyConvert = new mongoose.Types.ObjectId(botIDCopy)
+            if (!idConvert) {
+                return res.customResponse(400, "Bot ID Invalid", "");
+            }
+            if (botIDCopyConvert && String(idConvert) === String(botIDCopyConvert)) {
+                return res.customResponse(400, "Bot Master Cannot Be Itself", "");
+            }
 
-            const result = BotModel.updateOne({ _id: idConvert }, { $set: { botIDCopy: botIDCopyConvert } });
-            const result2 = BotModel.updateOne({ _id: botIDCopyConvert }, {
-                $addToSet: { botIDBeCopyList: idConvert }
-            })
-            const result3 = BotModel.updateOne({ _id: botIDCopyOld }, {
-                $pull: { botIDBeCopyList: idConvert }
-            })
+            const botData = await BotModel.findById(idConvert).select("botType botIDCopy");
+            if (!botData) {
+                return res.customResponse(404, "Bot Not Found", "");
+            }
 
-            await Promise.all([result, result2, result3])
+            if (botIDCopyConvert) {
+                const botMasterData = await BotModel.findById(botIDCopyConvert).select("botType");
+                if (!botMasterData) {
+                    return res.customResponse(404, "Bot Master Not Found", "");
+                }
+                if (botMasterData.botType !== botData.botType) {
+                    return res.customResponse(400, "Bot Master Must Have Same BotType", "");
+                }
+            }
 
-            res.customResponse(200, "Copy Bot Successful");
+            const listPromise = [
+                BotModel.updateOne(
+                    { _id: idConvert },
+                    { $set: { botIDCopy: botIDCopyConvert || null } }
+                )
+            ];
+
+            if (botIDCopyConvert) {
+                listPromise.push(
+                    BotModel.updateOne(
+                        { _id: botIDCopyConvert },
+                        { $addToSet: { botIDBeCopyList: idConvert } }
+                    )
+                );
+            }
+
+            const oldMasterBotID = botData.botIDCopy || botIDCopyOldConvert;
+            if (oldMasterBotID && String(oldMasterBotID) !== String(botIDCopyConvert || "")) {
+                listPromise.push(
+                    BotModel.updateOne(
+                        { _id: oldMasterBotID },
+                        { $pull: { botIDBeCopyList: idConvert } }
+                    )
+                );
+            }
+
+            await Promise.all(listPromise);
+
+            res.customResponse(200, botIDCopyConvert ? "Copy Bot Successful" : "Clear Bot Master Successful");
 
         } catch (error) {
             console.log(error);

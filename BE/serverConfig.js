@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const routes = require('./router');
 const cookieParser = require('cookie-parser');
+const { scheduleSyncFromRequest } = require('./services/botCopySyncService');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +27,7 @@ app.use((req, res, next) => {
       message: message,
       data: data
     })
+    scheduleSyncFromRequest({ req, status });
   }
   next();
 })
