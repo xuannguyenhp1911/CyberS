@@ -1,11 +1,17 @@
 {
+  "scripts": {
+    "start:server": "node server.js",
+    "start:trade:bybit:beta": "node Trader/ByBit/V3/runTrade-V3-ByBit-Beta.js",
+    "start:fe:build": "npx --prefix ../FE serve -s ../FE/build -l 3000",
+    "start:all:bybit:beta": "npx concurrently -k -n TRADE,BE,FE -c yellow,green,cyan \"npm run start:trade:bybit:beta\" \"npm run start:server\" \"npm run start:fe:build\""
+  },
   "dependencies": {
     "archiver": "^7.0.1",
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
     "big.js": "^6.2.1",
     "binance": "^2.15.20",
-    "bybit-api": "^3.10.3",
+    "bybit-api": "^3.11.0",
     "cli-color": "^2.0.4",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
