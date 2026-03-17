@@ -143,6 +143,47 @@ const mergeScannerMap = (targetMap, nextMap) => {
     });
 };
 
+const emitScannerDeleteForFollowers = async ({
+    followerBots,
+    scannerList = [],
+}) => {
+    if (!followerBots.length || !scannerList.length) {
+        return;
+    }
+
+    const followerBotMap = followerBots.reduce((prev, botItem) => {
+        prev[String(botItem._id)] = botItem;
+        return prev;
+    }, {});
+
+    const scannerByServerMap = scannerList.reduce((prev, scannerItem) => {
+        const followerBot = followerBotMap[String(scannerItem.botID)];
+        const serverIP = followerBot?.serverIP;
+        if (!serverIP) {
+            return prev;
+        }
+
+        const serverKey = String(serverIP);
+        if (!prev[serverKey]) {
+            prev[serverKey] = {
+                serverIP,
+                scannerList: [],
+            };
+        }
+
+        prev[serverKey].scannerList.push(scannerItem);
+        return prev;
+    }, {});
+
+    await Promise.allSettled(Object.values(scannerByServerMap).map((item) => {
+        return BotController.sendDataRealtime({
+            type: 'scanner-delete',
+            data: item.scannerList,
+            serverIP: item.serverIP,
+        });
+    }));
+};
+
 const copyFlatModelToFollowers = async ({
     model,
     masterBotID,
@@ -155,6 +196,17 @@ const copyFlatModelToFollowers = async ({
     }
 
     const followerBotIDs = followerBots.map((item) => item._id);
+    if (scannerMap) {
+        const activeScannerList = await model.find({
+            botID: { $in: followerBotIDs },
+            IsActive: true,
+        }).select('_id Candle botID').lean();
+
+        await emitScannerDeleteForFollowers({
+            followerBots,
+            scannerList: activeScannerList,
+        });
+    }
     await model.deleteMany({ botID: { $in: followerBotIDs } });
 
     const sourceList = await model.find({ botID: masterBotID }).lean();
@@ -174,6 +226,10 @@ const copyFlatModelToFollowers = async ({
                 clone.userID = followerBot.userID;
             }
             clone.TimeTemp = timeTemp;
+            if (scannerMap) {
+                // Followers should mirror master-generated configs, not run scanners independently.
+                clone.IsActive = false;
+            }
 
             insertList.push(clone);
             if (scannerMap) {
