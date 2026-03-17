@@ -2949,6 +2949,7 @@ const handleScannerDataList = async ({
                                 resetExpirePre: false,
                                 showLog: false
                             })
+                            newDataUpdate?.length > 0 && emitCopySyncMasterBot(botID)
                         } else {
                             const res = await createStrategiesMultipleStrategyBE({
                                 botID,
@@ -2984,6 +2985,7 @@ const handleScannerDataList = async ({
                                 listConfigIDByScanner[scannerID][symbol] = newData
 
                                 await handleSocketAddNew(newData)
+                                emitCopySyncMasterBot(botID)
 
                                 sendMessageWithRetryWait({
                                     // messageText: `✚ ${scannerDataLabel} <b>${symbol.split("-")[0]}</b> ${PositionSide} • ${newOC}% • Vol24h: ${formatNumberString(vol24H)}`,
@@ -3404,6 +3406,7 @@ try {
                                     const newStrategy = strategy
                                     newStrategy.scannerID = scannerIDData?._id
                                     offSuccess && handleSocketDelete([newStrategy], false);
+                                    offSuccess && emitCopySyncMasterBot(botID)
                                     strategy.Expire = 0
                                 }
                                 if (!allStrategiesByBotIDAndStrategiesID?.[botID]?.[strategyID]?.OC?.orderID &&
@@ -4378,6 +4381,9 @@ catch (e) {
 const socket = require('socket.io-client');
 
 const socketRealtime = socket(process.env.SOCKET_IP);
+const emitCopySyncMasterBot = (botID) => {
+    botID && socketRealtime.emit('copy-sync-master-bot', { botID });
+};
 
 socketRealtime.on('connect', () => {
     console.log('\n[V] Connected Socket Realtime\n');

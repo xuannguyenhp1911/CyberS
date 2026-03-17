@@ -28,6 +28,7 @@ const CONFIG_SYNC_DELAY_MS = 500;
 
 const syncByBotTypeTimers = new Map();
 const syncByPairTimers = new Map();
+const syncByMasterTimers = new Map();
 
 const ROUTE_BOT_TYPE_MAP = [
     { prefix: '/api/configbybitv3', botType: 'ByBit_V3' },
@@ -504,6 +505,37 @@ const syncFollowersByBotType = async (botType) => {
     };
 };
 
+const syncFollowersByMasterBotID = async (masterBotID) => {
+    const masterID = parseObjectId(masterBotID);
+    if (!masterID) {
+        return { status: false, message: 'Invalid master ID', count: 0 };
+    }
+
+    const masterBot = await BotModel.findOne({
+        _id: masterID,
+        botIDBeCopyList: { $exists: true, $ne: [] },
+    }).lean();
+
+    if (!masterBot) {
+        return { status: true, message: 'No follower', count: 0 };
+    }
+
+    const followerBots = await BotModel.find({
+        _id: { $in: masterBot.botIDBeCopyList || [] },
+        botIDCopy: masterBot._id,
+        botType: masterBot.botType,
+    }).lean();
+
+    if (!followerBots.length) {
+        return { status: true, message: 'No follower', count: 0 };
+    }
+
+    return syncMasterConfigsToFollowers({
+        masterBot,
+        followerBots,
+    });
+};
+
 const resolveBotTypeByPath = (pathLowerCase = '') => {
     const match = ROUTE_BOT_TYPE_MAP.find((item) => pathLowerCase.startsWith(item.prefix));
     return match?.botType;
@@ -555,6 +587,27 @@ const scheduleSyncByMasterFollower = ({ masterBotID, followerBotID }) => {
     syncByPairTimers.set(pairKey, nextTimer);
 };
 
+const scheduleSyncByMasterBotID = (masterBotID) => {
+    if (!masterBotID) {
+        return;
+    }
+
+    const masterKey = String(masterBotID);
+    const oldTimer = syncByMasterTimers.get(masterKey);
+    oldTimer && clearTimeout(oldTimer);
+
+    const nextTimer = setTimeout(async () => {
+        syncByMasterTimers.delete(masterKey);
+        try {
+            await syncFollowersByMasterBotID(masterBotID);
+        } catch (error) {
+            console.log(`[!] Sync by master failed (${masterKey}):`, error?.message || error);
+        }
+    }, 150);
+
+    syncByMasterTimers.set(masterKey, nextTimer);
+};
+
 const scheduleSyncFromRequest = ({ req, status }) => {
     if (status !== 200 || !req) {
         return;
@@ -584,7 +637,9 @@ const scheduleSyncFromRequest = ({ req, status }) => {
 };
 
 module.exports = {
+    scheduleSyncByMasterBotID,
     scheduleSyncFromRequest,
     syncMasterToFollower,
+    syncFollowersByMasterBotID,
     syncFollowersByBotType,
 };

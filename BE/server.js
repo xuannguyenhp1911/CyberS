@@ -1,4 +1,5 @@
 const { server, socketServer } = require('./serverConfig');
+const { scheduleSyncByMasterBotID } = require('./services/botCopySyncService');
 
 require('dotenv').config();
 
@@ -15,6 +16,10 @@ socketServer.on('connection', (socket) => {
   socket.on('joinRoom', (room) => {
     socket.join(room);
     console.log(`[V] Server joined room: ${room}`);
+  });
+
+  socket.on('copy-sync-master-bot', ({ botID }) => {
+    scheduleSyncByMasterBotID(botID);
   });
 
   socket.on('disconnect', () => {
