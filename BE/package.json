@@ -1,7 +1,13 @@
 {
   "scripts": {
     "start:server": "node server.js",
+    "start:balance:wallet": "node balanceWalletByTime.js",
     "start:trade:bybit:beta": "node Trader/ByBit/V3/runTrade-V3-ByBit-Beta.js",
+    "start:ops:bybit:beta": "npx concurrently -k -n TRADE,BE,WALLET -c yellow,green,magenta \"npm run start:trade:bybit:beta\" \"npm run start:server\" \"npm run start:balance:wallet\"",
+    "pm2:start:ops:bybit:beta": "pm2 start ecosystem.bybit-beta.config.js",
+    "pm2:restart:ops:bybit:beta": "pm2 restart server.js balanceWalletByTime.js runTrade-V3-ByBit-Beta.js",
+    "pm2:stop:ops:bybit:beta": "pm2 stop server.js balanceWalletByTime.js runTrade-V3-ByBit-Beta.js",
+    "pm2:delete:ops:bybit:beta": "pm2 delete server.js balanceWalletByTime.js runTrade-V3-ByBit-Beta.js",
     "start:fe:build": "npx --prefix ../FE serve -s ../FE/build -l 3000",
     "start:all:bybit:beta": "npx concurrently -k -n TRADE,BE,FE -c yellow,green,cyan \"npm run start:trade:bybit:beta\" \"npm run start:server\" \"npm run start:fe:build\""
   },
