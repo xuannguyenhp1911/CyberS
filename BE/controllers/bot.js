@@ -1476,21 +1476,22 @@ const BotController = {
                 )
             ];
 
+            const removeFollowerFromMasterFilter = botIDCopyConvert
+                ? { _id: { $ne: botIDCopyConvert }, botIDBeCopyList: idConvert }
+                : { botIDBeCopyList: idConvert };
+
+            listPromise.push(
+                BotModel.updateMany(
+                    removeFollowerFromMasterFilter,
+                    { $pull: { botIDBeCopyList: idConvert } }
+                )
+            );
+
             if (botIDCopyConvert) {
                 listPromise.push(
                     BotModel.updateOne(
                         { _id: botIDCopyConvert },
                         { $addToSet: { botIDBeCopyList: idConvert } }
-                    )
-                );
-            }
-
-            const oldMasterBotID = botData.botIDCopy || botIDCopyOldConvert;
-            if (oldMasterBotID && String(oldMasterBotID) !== String(botIDCopyConvert || "")) {
-                listPromise.push(
-                    BotModel.updateOne(
-                        { _id: oldMasterBotID },
-                        { $pull: { botIDBeCopyList: idConvert } }
                     )
                 );
             }

@@ -29,6 +29,7 @@ const CONFIG_SYNC_DELAY_MS = 500;
 const syncByBotTypeTimers = new Map();
 const syncByPairTimers = new Map();
 const syncByMasterTimers = new Map();
+const syncQueueByMaster = new Map();
 
 const ROUTE_BOT_TYPE_MAP = [
     { prefix: '/api/configbybitv3', botType: 'ByBit_V3' },
@@ -50,7 +51,6 @@ const ROUTE_BOT_TYPE_MAP = [
 
     { prefix: '/api/configbinancev3', botType: 'Binance_V3' },
     { prefix: '/api/configbinanceoldv3', botType: 'Binance_V3' },
-    { prefix: '/api/scannerbinancev3', botType: 'Binance_V3' },
 ];
 
 const COPY_PLAN_BY_BOT_TYPE = {
@@ -103,7 +103,6 @@ const COPY_PLAN_BY_BOT_TYPE = {
     },
     Binance_V3: {
         flatModels: [
-            { model: ScannerBinanceV3Model, scannerMap: true },
             { model: ConfigBinanceV3Model, scannerMap: false },
         ],
         childModels: [
@@ -142,6 +141,28 @@ const mergeScannerMap = (targetMap, nextMap) => {
             ...nextMap[followerID],
         };
     });
+};
+
+const runMasterSyncInQueue = async ({ masterBotID, task }) => {
+    const masterKey = String(masterBotID || '');
+    if (!masterKey) {
+        return task();
+    }
+
+    const previousTask = syncQueueByMaster.get(masterKey) || Promise.resolve();
+    const nextTask = previousTask
+        .catch(() => { })
+        .then(() => task());
+
+    syncQueueByMaster.set(masterKey, nextTask);
+
+    try {
+        return await nextTask;
+    } finally {
+        if (syncQueueByMaster.get(masterKey) === nextTask) {
+            syncQueueByMaster.delete(masterKey);
+        }
+    }
 };
 
 const emitScannerDeleteForFollowers = async ({
@@ -400,42 +421,64 @@ const syncMasterConfigsToFollowers = async ({
         return { status: false, message: 'No follower bot' };
     }
 
-    const syncPlan = COPY_PLAN_BY_BOT_TYPE[masterBot.botType];
-    if (!syncPlan) {
-        return { status: false, message: 'Unsupported bot type' };
-    }
+    return runMasterSyncInQueue({
+        masterBotID: masterBot._id,
+        task: async () => {
+            const followerIDList = followerBots.map((item) => item?._id).filter(Boolean);
+            if (!followerIDList.length) {
+                return { status: true, message: 'No follower', count: 0 };
+            }
 
-    const scannerMapByFollower = {};
+            // Re-check link at execution time to avoid stale queued jobs
+            // copying after follower was switched to "None".
+            const activeFollowerBots = await BotModel.find({
+                _id: { $in: followerIDList },
+                botIDCopy: masterBot._id,
+                botType: masterBot.botType,
+            }).lean();
 
-    for (const flatItem of (syncPlan.flatModels || [])) {
-        const newScannerMap = await copyFlatModelToFollowers({
-            model: flatItem.model,
-            masterBotID: masterBot._id,
-            followerBots,
-            scannerMap: flatItem.scannerMap,
-        });
-        mergeScannerMap(scannerMapByFollower, newScannerMap);
-    }
+            if (!activeFollowerBots.length) {
+                return { status: true, message: 'No active follower', count: 0 };
+            }
 
-    for (const childModel of (syncPlan.childModels || [])) {
-        await copyChildModelToFollowers({
-            model: childModel,
-            masterBotID: masterBot._id,
-            followerBots,
-            scannerMapByFollower,
-        });
-    }
+            const syncPlan = COPY_PLAN_BY_BOT_TYPE[masterBot.botType];
+            if (!syncPlan) {
+                return { status: false, message: 'Unsupported bot type' };
+            }
 
-    await Promise.allSettled(followerBots.map((botItem) => emitBotRealtimeAfterSync({
-        botData: botItem,
-        botType: masterBot.botType,
-    })));
+            const scannerMapByFollower = {};
 
-    return {
-        status: true,
-        message: 'Synced',
-        count: followerBots.length,
-    };
+            for (const flatItem of (syncPlan.flatModels || [])) {
+                const newScannerMap = await copyFlatModelToFollowers({
+                    model: flatItem.model,
+                    masterBotID: masterBot._id,
+                    followerBots: activeFollowerBots,
+                    scannerMap: flatItem.scannerMap,
+                });
+                mergeScannerMap(scannerMapByFollower, newScannerMap);
+            }
+
+            for (const childModel of (syncPlan.childModels || [])) {
+                await copyChildModelToFollowers({
+                    model: childModel,
+                    masterBotID: masterBot._id,
+                    followerBots: activeFollowerBots,
+                    scannerMapByFollower,
+                });
+            }
+
+            await Promise.allSettled(activeFollowerBots.map((botItem) => emitBotRealtimeAfterSync({
+                botData: botItem,
+                botType: masterBot.botType,
+            })));
+
+            return {
+                status: true,
+                message: 'Synced',
+                count: activeFollowerBots.length,
+            };
+        },
+    });
 };
 
 const syncMasterToFollower = async ({ masterBotID, followerBotID }) => {
