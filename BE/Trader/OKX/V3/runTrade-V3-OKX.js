@@ -2225,6 +2225,128 @@ const handleSocketDelete = async (newData = [], IsDeleted = true) => {
     await Promise.allSettled([cancelAllOC, cancelAllTP])
 }
 
+const getBotIDKey = (botID) => {
+    if (!botID) {
+        return ""
+    }
+    return String(botID?._id || botID)
+}
+
+const clearStaleScannerSnapshotByBot = ({
+    botIDMain,
+    scannerData = []
+}) => {
+    const botIDKey = getBotIDKey(botIDMain)
+    if (!botIDKey) {
+        return
+    }
+
+    const incomingScannerIDSet = new Set(
+        scannerData
+            .map(item => String(item?._id || ""))
+            .filter(Boolean)
+    )
+
+    Object.keys(allScannerDataObject || {}).forEach((candle) => {
+        const scannerBySymbol = allScannerDataObject[candle] || {}
+
+        Object.keys(scannerBySymbol).forEach((symbol) => {
+            const scannerMap = scannerBySymbol[symbol] || {}
+
+            Object.keys(scannerMap).forEach((scannerID) => {
+                const scannerItem = scannerMap[scannerID]
+                const scannerBotID = getBotIDKey(scannerItem?.botID)
+                if (scannerBotID !== botIDKey) {
+                    return
+                }
+
+                if (!incomingScannerIDSet.has(String(scannerID))) {
+                    delete allScannerDataObject[candle][symbol][scannerID]
+
+                    if (listConfigIDByScanner?.[scannerID]) {
+                        delete listConfigIDByScanner[scannerID][symbol]
+
+                        if (Object.keys(listConfigIDByScanner[scannerID]).length === 0) {
+                            delete listConfigIDByScanner[scannerID]
+                        }
+                    }
+                }
+            })
+
+            if (Object.keys(allScannerDataObject[candle][symbol] || {}).length === 0) {
+                delete allScannerDataObject[candle][symbol]
+            }
+        })
+
+        if (Object.keys(allScannerDataObject[candle] || {}).length === 0) {
+            delete allScannerDataObject[candle]
+        }
+    })
+}
+
+const purgeStaleBotSnapshot = async ({
+    botIDMain,
+    configData = [],
+    scannerData = []
+}) => {
+    const botIDKey = getBotIDKey(botIDMain)
+    if (!botIDKey) {
+        return
+    }
+
+    const incomingStrategyIDSet = new Set(
+        configData
+            .map(item => String(item?.value || ""))
+            .filter(Boolean)
+    )
+
+    const staleStrategyIDList = Object.keys(allStrategiesByBotIDAndStrategiesID?.[botIDKey] || {}).filter((strategyID) => {
+        return !incomingStrategyIDSet.has(String(strategyID))
+    })
+
+    if (staleStrategyIDList.length > 0) {
+        const staleStrategyIDSet = new Set(staleStrategyIDList.map(item => String(item)))
+        const staleStrategyMap = {}
+
+        Object.values(allStrategiesByCandleAndSymbol || {}).forEach((strategiesByCandle = {}) => {
+            Object.values(strategiesByCandle || {}).forEach((strategiesByID = {}) => {
+                Object.values(strategiesByID || {}).forEach((strategyItem) => {
+                    const strategyID = String(strategyItem?.value || "")
+                    const strategyBotID = getBotIDKey(strategyItem?.botID)
+
+                    if (!strategyID || strategyBotID !== botIDKey) {
+                        return
+                    }
+                    if (staleStrategyIDSet.has(strategyID)) {
+                        staleStrategyMap[strategyID] = strategyItem
+                    }
+                })
+            })
+        })
+
+        const staleStrategyList = Object.values(staleStrategyMap)
+        if (staleStrategyList.length > 0) {
+            await handleSocketDelete(staleStrategyList, true)
+        }
+
+        staleStrategyIDList.forEach((strategyID) => {
+            if (allStrategiesByBotIDAndStrategiesID?.[botIDKey]) {
+                delete allStrategiesByBotIDAndStrategiesID[botIDKey][strategyID]
+            }
+            Object.keys(listOCByCandleBot || {}).forEach((candleMain) => {
+                if (listOCByCandleBot?.[candleMain]?.[botIDKey]?.listOC) {
+                    delete listOCByCandleBot[candleMain][botIDKey].listOC[strategyID]
+                }
+            })
+        })
+    }
+
+    clearStaleScannerSnapshotByBot({
+        botIDMain: botIDKey,
+        scannerData
+    })
+}
+
 const handleSocketScannerUpdate = async (newData = []) => {
 
     console.log("[...] Update BigBabol From Realtime", newData.length);
@@ -4429,6 +4551,12 @@ socketRealtime.on('bot-update', async (data = {}) => {
     const botNameExist = botApiData?.botName || botIDMain
     console.log(`[...] Bot-Update ( ${botNameExist} ) Config From Realtime: \nConfig: ${configData.length} - BigBabol: ${scannerData.length}`,);
     // console.log(`[...] Bot-Update ( ${botNameExist} ) Config From Realtime`,);
+
+    await purgeStaleBotSnapshot({
+        botIDMain,
+        configData,
+        scannerData
+    })
 
     const newBotApiList = {}
 

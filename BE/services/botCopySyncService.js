@@ -2,7 +2,6 @@ const mongoose = require('../mongo');
 const BotModel = require('../models/bot.model');
 
 const StrategiesByBitV3Model = require('../models/Configs/ByBit/V3/config.model');
-const WaveByBitV3Model = require('../models/Configs/ByBit/V3/wave.model');
 const ScannerByBitV3Model = require('../models/Configs/ByBit/V3/scanner.model');
 
 const SpotByBitV1Model = require('../models/Configs/ByBit/V1/spot.model');
@@ -55,18 +54,19 @@ const ROUTE_BOT_TYPE_MAP = [
 
 const COPY_PLAN_BY_BOT_TYPE = {
     ByBit_V3: {
-        flatModels: [
+        cleanupFlatModels: [
             { model: ScannerByBitV3Model, scannerMap: true },
         ],
+        flatModels: [],
         childModels: [
             StrategiesByBitV3Model,
-            WaveByBitV3Model,
         ],
     },
     ByBit_V1: {
-        flatModels: [
+        cleanupFlatModels: [
             { model: ScannerByBitV1Model, scannerMap: true },
         ],
+        flatModels: [],
         childModels: [
             SpotByBitV1Model,
             MarginByBitV1Model,
@@ -74,9 +74,10 @@ const COPY_PLAN_BY_BOT_TYPE = {
         ],
     },
     Binance_V1: {
-        flatModels: [
+        cleanupFlatModels: [
             { model: ScannerByBitV1Model, scannerMap: true },
         ],
+        flatModels: [],
         childModels: [
             SpotByBitV1Model,
             MarginByBitV1Model,
@@ -84,9 +85,10 @@ const COPY_PLAN_BY_BOT_TYPE = {
         ],
     },
     OKX_V1: {
-        flatModels: [
+        cleanupFlatModels: [
             { model: ScannerOKXV1Model, scannerMap: true },
         ],
+        flatModels: [],
         childModels: [
             SpotOKXV1Model,
             MarginOKXV1Model,
@@ -94,9 +96,10 @@ const COPY_PLAN_BY_BOT_TYPE = {
         ],
     },
     OKX_V3: {
-        flatModels: [
+        cleanupFlatModels: [
             { model: ScannerOKXV3Model, scannerMap: true },
         ],
+        flatModels: [],
         childModels: [
             ConfigOKXV3Model,
         ],
@@ -206,15 +209,13 @@ const emitScannerDeleteForFollowers = async ({
     }));
 };
 
-const copyFlatModelToFollowers = async ({
+const clearFlatModelForFollowers = async ({
     model,
-    masterBotID,
     followerBots,
     scannerMap = false,
 }) => {
-    const resultMap = {};
     if (!followerBots.length) {
-        return resultMap;
+        return;
     }
 
     const followerBotIDs = followerBots.map((item) => item._id);
@@ -229,7 +230,26 @@ const copyFlatModelToFollowers = async ({
             scannerList: activeScannerList,
         });
     }
+
     await model.deleteMany({ botID: { $in: followerBotIDs } });
+};
+
+const copyFlatModelToFollowers = async ({
+    model,
+    masterBotID,
+    followerBots,
+    scannerMap = false,
+}) => {
+    const resultMap = {};
+    if (!followerBots.length) {
+        return resultMap;
+    }
+
+    await clearFlatModelForFollowers({
+        model,
+        followerBots,
+        scannerMap,
+    });
 
     const sourceList = await model.find({ botID: masterBotID }).lean();
     if (!sourceList.length) {
@@ -447,6 +467,14 @@ const syncMasterConfigsToFollowers = async ({
             }
 
             const scannerMapByFollower = {};
+
+            for (const flatItem of (syncPlan.cleanupFlatModels || [])) {
+                await clearFlatModelForFollowers({
+                    model: flatItem.model,
+                    followerBots: activeFollowerBots,
+                    scannerMap: flatItem.scannerMap,
+                });
+            }
 
             for (const flatItem of (syncPlan.flatModels || [])) {
                 const newScannerMap = await copyFlatModelToFollowers({
